@@ -103,6 +103,8 @@ func Load(o Overrides) (Config, Paths, error) {
 	}
 	if o.ConfigPath != nil && *o.ConfigPath != "" {
 		paths.ConfigFile = *o.ConfigPath
+	} else if v := os.Getenv("WHOOSH2CONNECT_CONFIG"); v != "" {
+		paths.ConfigFile = v
 	}
 
 	cfg := Default()

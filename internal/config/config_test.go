@@ -128,6 +128,23 @@ func TestSaveRoundTripAndPerms(t *testing.T) {
 	}
 }
 
+func TestEnvConfigPathChoosesFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom.yaml")
+	if err := os.WriteFile(path, []byte("mywhoosh:\n  email: custom@x\ndevice:\n  preset: edge_1050\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WHOOSH2CONNECT_CONFIG", path)
+
+	cfg, _, err := Load(Overrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MyWhoosh.Email != "custom@x" || cfg.Device.Preset != "edge_1050" {
+		t.Errorf("loaded %+v from env config path, want custom.yaml contents", cfg)
+	}
+}
+
 func TestInvalidEnvSerialIgnored(t *testing.T) {
 	t.Setenv("WHOOSH2CONNECT_DEVICE_SERIAL", "not-a-number")
 	cfg, _, err := Load(Overrides{})
