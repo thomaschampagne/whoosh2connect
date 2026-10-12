@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -173,6 +174,11 @@ func (c *Client) refreshOAuth2(ctx context.Context) error {
 	return nil
 }
 
+var (
+	// ErrDuplicate indicates the activity already exists on Garmin Connect.
+	ErrDuplicate = errors.New("duplicate activity already on Garmin")
+)
+
 // UploadFIT uploads the given FIT file, refreshing the OAuth2 token if it has
 // expired and retrying once on a rejected token.
 func (c *Client) UploadFIT(ctx context.Context, filePath string) error {
@@ -247,7 +253,7 @@ func (c *Client) doUpload(ctx context.Context, filePath string) (int, []byte, er
 
 func parseUploadResult(status int, body []byte) error {
 	if status == 409 {
-		return fmt.Errorf("duplicate activity (already uploaded to Garmin)")
+		return ErrDuplicate
 	}
 	if status >= 400 {
 		return fmt.Errorf("upload failed (HTTP %d): %s", status, truncate(body))
