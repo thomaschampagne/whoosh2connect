@@ -226,7 +226,7 @@ func TestSettingsNavigateAndSave(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected bootstrap re-login after save")
 	}
-	want := Settings{MywhooshEmail: "me@x.com", MywhooshPassword: "mwpass", GarminEmail: "g@x.com", GarminPassword: "gpass", DevicePreset: "edge_540"}
+	want := Settings{MywhooshEmail: "me@x.com", MywhooshPassword: "mwpass", GarminEmail: "g@x.com", GarminPassword: "gpass", DevicePreset: "edge_540", DeviceName: "", DeviceSerial: ""}
 	if saved != want {
 		t.Fatalf("saved = %+v", saved)
 	}

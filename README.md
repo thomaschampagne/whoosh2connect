@@ -23,7 +23,7 @@ activity stripped of metrics. This tool fixes all three before uploading.
 Requires Go 1.24+.
 
 ```sh
-make build          # builds bin/whoosh2connect with version/commit stamped in
+just build          # builds bin/whoosh2connect with version/commit stamped in
 # or
 go install ./cmd/whoosh2connect
 ```
@@ -155,10 +155,10 @@ may conflict with the services' terms of service. Use at your own risk.
 ## Development
 
 ```sh
-make test     # go test ./...
-make vet      # go vet ./...
-make lint     # golangci-lint run
-make fmt      # gofmt -s -w .
+just test     # go test ./...
+just vet      # go vet ./...
+just lint     # golangci-lint run
+just fmt      # gofmt -s -w .
 ```
 
 See `AGENTS.md` for the project layout and contribution rules.

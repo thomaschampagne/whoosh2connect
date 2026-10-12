@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -199,6 +201,60 @@ func TestLoginMyWhooshResumeOrLogin(t *testing.T) {
 	}
 	if !mw.auth {
 		t.Fatal("mywhoosh not logged in")
+	}
+}
+
+func TestProcessLocalFitUploadsAndDedupes(t *testing.T) {
+	data := fixture()
+	path := filepath.Join(t.TempDir(), "MyNewActivity-1.0.fit")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	id := "local:hash"
+
+	mw := &fakeMyWhoosh{}
+	g := &fakeGarmin{}
+	svc := newService(t, mw, g)
+
+	res := svc.ProcessLocalFit(context.Background(), id, path)
+	if res.Status != StatusUploaded {
+		t.Fatalf("status = %s (%v)", res.Status, res.Err)
+	}
+	if g.uploads != 1 {
+		t.Fatalf("uploads = %d, want 1", g.uploads)
+	}
+	if !svc.Store.IsUploaded(id) {
+		t.Fatal("local fit not marked uploaded")
+	}
+
+	res = svc.ProcessLocalFit(context.Background(), id, path)
+	if res.Status != StatusSkipped {
+		t.Fatalf("second call status = %s", res.Status)
+	}
+}
+
+func TestProcessLocalFitDuplicate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "MyNewActivity-1.0.fit")
+	if err := os.WriteFile(path, fixture(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g := &fakeGarmin{upload: func(p string) error { return garmin.ErrDuplicate }}
+	svc := newService(t, &fakeMyWhoosh{}, g)
+
+	res := svc.ProcessLocalFit(context.Background(), "local:dup", path)
+	if res.Status != StatusDuplicate {
+		t.Fatalf("status = %s (%v)", res.Status, res.Err)
+	}
+	if !svc.Store.IsUploaded("local:dup") {
+		t.Fatal("duplicate should be marked uploaded")
+	}
+}
+
+func TestProcessLocalFitReadFailure(t *testing.T) {
+	svc := newService(t, &fakeMyWhoosh{}, &fakeGarmin{})
+	res := svc.ProcessLocalFit(context.Background(), "local:x", filepath.Join(t.TempDir(), "missing.fit"))
+	if res.Status != StatusFailed {
+		t.Fatalf("status = %s", res.Status)
 	}
 }
 

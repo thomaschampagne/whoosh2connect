@@ -1,11 +1,14 @@
 // Package device defines spoofable Garmin device presets and applies them to
-// FIT activity messages. Product IDs come verbatim from the Garmin FIT SDK
-// product list (muktihari/fit profile/typedef) — nothing is guessed.
+// FIT activity messages. The preset list is derived from the Garmin FIT SDK
+// product list shipped with muktihari/fit (profile/typedef) — nothing is
+// hand-maintained or guessed.
 package device
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/muktihari/fit/profile/typedef"
 )
@@ -20,37 +23,74 @@ type Preset struct {
 	DefaultName string
 }
 
-// presets maps stable IDs to Garmin FIT SDK products.
-var presets = []Preset{
-	{ID: "edge_20", Product: typedef.GarminProductEdge20, DefaultName: "Edge 20"},
-	{ID: "edge_25", Product: typedef.GarminProductEdge25, DefaultName: "Edge 25"},
-	{ID: "edge_130", Product: typedef.GarminProductEdge130, DefaultName: "Edge 130"},
-	{ID: "edge_130_plus", Product: typedef.GarminProductEdge130Plus, DefaultName: "Edge 130 Plus"},
-	{ID: "edge_500", Product: typedef.GarminProductEdge500, DefaultName: "Edge 500"},
-	{ID: "edge_510", Product: typedef.GarminProductEdge510, DefaultName: "Edge 510"},
-	{ID: "edge_520", Product: typedef.GarminProductEdge520, DefaultName: "Edge 520"},
-	{ID: "edge_520_plus", Product: typedef.GarminProductEdge520Plus, DefaultName: "Edge 520 Plus"},
-	{ID: "edge_530", Product: typedef.GarminProductEdge530, DefaultName: "Edge 530"},
-	{ID: "edge_540", Product: typedef.GarminProductEdge540, DefaultName: "Edge 540"},
-	{ID: "edge_550", Product: typedef.GarminProductEdge550, DefaultName: "Edge 550"},
-	{ID: "edge_820", Product: typedef.GarminProductEdge820, DefaultName: "Edge 820"},
-	{ID: "edge_830", Product: typedef.GarminProductEdge830, DefaultName: "Edge 830"},
-	{ID: "edge_840", Product: typedef.GarminProductEdge840, DefaultName: "Edge 840"},
-	{ID: "edge_850", Product: typedef.GarminProductEdge850, DefaultName: "Edge 850"},
-	{ID: "edge_1000", Product: typedef.GarminProductEdge1000, DefaultName: "Edge 1000"},
-	{ID: "edge_1030", Product: typedef.GarminProductEdge1030, DefaultName: "Edge 1030"},
-	{ID: "edge_1030_plus", Product: typedef.GarminProductEdge1030Plus, DefaultName: "Edge 1030 Plus"},
-	{ID: "edge_1040", Product: typedef.GarminProductEdge1040, DefaultName: "Edge 1040"},
-	{ID: "edge_1050", Product: typedef.GarminProductEdge1050, DefaultName: "Edge 1050"},
-	{ID: "edge_explore", Product: typedef.GarminProductEdgeExplore, DefaultName: "Edge Explore"},
-	{ID: "edge_explore_2", Product: typedef.GarminProductEdgeExplore2, DefaultName: "Edge Explore 2"},
+// regionSuffixes mark product variants of the same hardware sold in specific
+// regions or as special editions; including them would clutter the picker
+// without adding spoofable differences.
+var regionSuffixes = []string{
+	"_asia", "_apac", "_sea", "_china", "_japan", "_korea", "_taiwan", "_bontrager",
+}
+
+// digitBoundary turns "edge500" into "edge_500"; the library's String() forms
+// are inconsistent ("edge500", "Edge_130", "edge_explore2", "edge_540").
+var digitBoundary = regexp.MustCompile(`([a-z])([0-9])`)
+
+// canonKey normalizes a library product name into a stable config key.
+func canonKey(name string) string {
+	return digitBoundary.ReplaceAllString(strings.ToLower(name), `${1}_${2}`)
+}
+
+// displayName prettifies a canonical key into a human label.
+func displayName(key string) string {
+	words := strings.Split(key, "_")
+	for i, w := range words {
+		if w == "" {
+			continue
+		}
+		words[i] = strings.ToUpper(w[:1]) + w[1:]
+	}
+	return strings.Join(words, " ")
+}
+
+// presets is built once from typedef.ListGarminProduct().
+var presets = buildPresets()
+
+// buildPresets derives the Edge device list straight from the FIT SDK product
+// table, dropping regional and special-edition variants of the same hardware.
+func buildPresets() []Preset {
+	seen := map[typedef.GarminProduct]bool{}
+	out := []Preset{}
+	for _, p := range typedef.ListGarminProduct() {
+		name := strings.ToLower(p.String())
+		if !strings.HasPrefix(name, "edge") {
+			continue
+		}
+		if seen[p] {
+			continue
+		}
+		key := canonKey(name)
+		if isRegional(key) {
+			continue
+		}
+		seen[p] = true
+		out = append(out, Preset{ID: key, Product: p, DefaultName: displayName(key)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DefaultName < out[j].DefaultName })
+	return out
+}
+
+func isRegional(key string) bool {
+	for _, s := range regionSuffixes {
+		if strings.HasSuffix(key, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // Presets returns all device presets sorted by display name.
 func Presets() []Preset {
 	out := make([]Preset, len(presets))
 	copy(out, presets)
-	sort.Slice(out, func(i, j int) bool { return out[i].DefaultName < out[j].DefaultName })
 	return out
 }
 

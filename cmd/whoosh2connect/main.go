@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"whoosh2connect/internal/state"
 	"whoosh2connect/internal/tui"
 	"whoosh2connect/internal/version"
+	"whoosh2connect/internal/watch"
 )
 
 func main() {
@@ -54,6 +56,9 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 	deviceSerial := conf.Uint("device-serial", 0, "override device serial (non-zero uint32)")
 	noTUI := conf.Bool("no-tui", false, "sync headless and exit")
 	showVersion := conf.Bool("version", false, "print version and exit")
+	watchDir := conf.String("watch", "", `watch local MyWhoosh dir for new rides and auto-upload; "auto" discovers it`)
+	watchInterval := conf.Int("watch-interval", 10, "seconds between scans in watch mode")
+	watchStable := conf.Int("watch-stable", 2, "consecutive stable scans before a ride counts as done")
 	conf.Usage = func() {
 		write(stderr, "whoosh2connect — sync MyWhoosh sessions to Garmin Connect\n\n")
 		write(stderr, "Usage: whoosh2connect [flags]")
@@ -111,6 +116,33 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 	if err != nil {
 		write(stderr, "state: %v\n", err)
 		return 1
+	}
+
+	if *watchDir != "" {
+		dir := *watchDir
+		if dir == "auto" {
+			d, err := watch.DefaultDir()
+			if err != nil {
+				write(stderr, "watch: %v\n", err)
+				return 1
+			}
+			dir = d
+		}
+		st, err := os.Stat(dir)
+		if err != nil || !st.IsDir() {
+			write(stderr, "watch: %s is not a directory\n", dir)
+			return 1
+		}
+		w, err := watch.New(watch.Options{
+			Dir:         dir,
+			Interval:    time.Duration(*watchInterval) * time.Second,
+			StableScans: *watchStable,
+		})
+		if err != nil {
+			write(stderr, "watch: %v\n", err)
+			return 1
+		}
+		return watchLoop(w, svc, cfg, stdin, stdout, stderr)
 	}
 
 	if *noTUI {
@@ -206,19 +238,8 @@ func headless(cfg config.Config, svc *app.Service, stdin *os.File, stdout, stder
 		write(stderr, "mywhoosh: %v\n", err)
 		return 1
 	}
-	err := svc.LoginGarmin(ctx, cfg.Garmin.Email, garminPass)
-	if err == garmin.ErrMFARequired {
-		write(stderr, "Garmin requires a verification code: ")
-		code, err := bufio.NewReader(stdin).ReadString('\n')
-		if err != nil {
-			write(stderr, "read code: %v\n", err)
-			return 1
-		}
-		if err := svc.SubmitMFA(ctx, strings.TrimSpace(code)); err != nil {
-			write(stderr, "mfa: %v\n", err)
-			return 1
-		}
-	} else if err != nil {
+	err := loginGarmin(ctx, svc, cfg.Garmin.Email, garminPass, stdin, stderr)
+	if err != nil {
 		write(stderr, "garmin: %v\n", err)
 		return 1
 	}
@@ -246,6 +267,62 @@ func headless(cfg config.Config, svc *app.Service, stdin *os.File, stdout, stder
 		}
 	}
 	return 0
+}
+
+// loginGarmin logs into Garmin, prompting for an MFA code on stdin when the
+// account requires a verification step.
+func loginGarmin(ctx context.Context, svc *app.Service, email, password string, stdin *os.File, stderr *os.File) error {
+	err := svc.LoginGarmin(ctx, email, password)
+	if err != garmin.ErrMFARequired {
+		return err
+	}
+	write(stderr, "Garmin requires a verification code: ")
+	code, err := bufio.NewReader(stdin).ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("read code: %w", err)
+	}
+	if err := svc.SubmitMFA(ctx, strings.TrimSpace(code)); err != nil {
+		return fmt.Errorf("mfa: %w", err)
+	}
+	return nil
+}
+
+// watchLoop scans a local MyWhoosh FIT directory for finished rides, fixing,
+// spoofing, and uploading each one. Rides whose upload failed are retried on a
+// later scan; Ctrl-C exits.
+func watchLoop(w *watch.Watcher, svc *app.Service, cfg config.Config, stdin *os.File, stdout, stderr *os.File) int {
+	if cfg.Garmin.Email == "" {
+		write(stderr, "watch mode needs --garmin-email\n")
+		return 1
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if err := loginGarmin(ctx, svc, cfg.Garmin.Email, os.Getenv("WHOOSH2CONNECT_GARMIN_PASSWORD"), stdin, stderr); err != nil {
+		write(stderr, "garmin: %v\n", err)
+		return 1
+	}
+	write(stdout, "watching %s (every %s)\n", w.Dir(), w.Interval())
+
+	for {
+		rides, err := w.Scan()
+		if err != nil {
+			write(stderr, "watch: %v\n", err)
+			return 1
+		}
+		for _, r := range rides {
+			res := svc.ProcessLocalFit(ctx, "local:"+r.Hash, r.Path)
+			write(stdout, "%s %s — %s\n", statusWord(res), r.File, res.DescribeUpload())
+			if res.Status == app.StatusFailed {
+				w.Forget(r.Hash)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return 0
+		case <-time.After(w.Interval()):
+		}
+	}
 }
 
 func statusWord(res app.UploadResult) string {

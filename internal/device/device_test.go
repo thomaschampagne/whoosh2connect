@@ -10,10 +10,11 @@ import (
 	"github.com/muktihari/fit/encoder"
 	"github.com/muktihari/fit/profile/filedef"
 	"github.com/muktihari/fit/profile/mesgdef"
+	"github.com/muktihari/fit/profile/typedef"
 )
 
 func TestRequiredPresetsExist(t *testing.T) {
-	for _, id := range []string{"edge_540", "edge_1030"} {
+	for _, id := range []string{"edge_540", "edge_1030", "edge_130"} {
 		p, err := Lookup(id)
 		if err != nil {
 			t.Fatalf("required preset %s missing: %v", id, err)
@@ -23,6 +24,24 @@ func TestRequiredPresetsExist(t *testing.T) {
 		}
 		if p.DefaultName == "" {
 			t.Errorf("preset %s has empty name", id)
+		}
+	}
+}
+
+func TestPresetsDerivedFromSDK(t *testing.T) {
+	lib := map[typedef.GarminProduct]bool{}
+	for _, p := range typedef.ListGarminProduct() {
+		lib[p] = true
+	}
+	for _, p := range Presets() {
+		if !lib[p.Product] {
+			t.Errorf("%s: product %d not in typedef list", p.ID, p.Product)
+		}
+		if isRegional(p.ID) {
+			t.Errorf("%s: regional variant leaked into presets", p.ID)
+		}
+		if p.ID == "" || p.DefaultName == "" {
+			t.Errorf("preset %+v has empty id or name", p)
 		}
 	}
 }

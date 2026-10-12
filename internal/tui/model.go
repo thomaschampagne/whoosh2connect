@@ -31,6 +31,7 @@ type screen int
 const (
 	screenLoading screen = iota
 	screenList
+	screenPreview
 	screenSettings
 	screenMFA
 	screenConfirm
@@ -60,10 +61,51 @@ type Model struct {
 	mfaInput       textinput.Model
 	mfaMethod      string
 	uploading      int
+	uploadingName  string
 	showHelp       bool
 	width          int
 	height         int
 	spinner        spinner.Model
+	page           int
+	pageSizeVal    int
+}
+
+func (m Model) pageSize() int {
+	if m.pageSizeVal > 0 {
+		return m.pageSizeVal
+	}
+	return 10
+}
+
+func (m *Model) clampPage() {
+	max := m.pageCount()
+	if max <= 0 {
+		m.page = 0
+		return
+	}
+	if m.page >= max {
+		m.page = max - 1
+	}
+	if m.page < 0 {
+		m.page = 0
+	}
+}
+
+func (m Model) pageCount() int {
+	n := len(m.sessions)
+	ps := m.pageSize()
+	if n == 0 {
+		return 1
+	}
+	p := n / ps
+	if n%ps != 0 {
+		p++
+	}
+	return p
+}
+
+func (m Model) pageStart() int {
+	return m.page * m.pageSize()
 }
 
 type keymap struct {
@@ -203,18 +245,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.sessions = msg.sessions
 		m.screen = screenList
-		if msg.err != nil {
-			m.status = m.th.paint(msg.err.Error(), m.th.danger)
-		}
+		m.page = 0
+		m.clampCursor()
+		m.clampPage()
 
 	case sessionsMsg:
 		m.screen = screenList
+		m.page = 0
 		if msg.err != nil {
 			m.status = m.th.paint(msg.err.Error(), m.th.danger)
 			return m, nil
 		}
 		m.sessions = msg.sessions
 		m.clampCursor()
+		m.clampPage()
+		m.clampPage()
 
 	case uploadMsg:
 		if m.uploading > 0 {
@@ -261,6 +306,8 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.uploading = 1
+			m.uploadingName = "Garmin login"
+			m.uploadingName = "Garmin login"
 			return m, m.mfaCmd(code)
 		case key.Matches(msg, key.NewBinding(key.WithKeys("esc", "q"))):
 			m.screen = screenList
@@ -309,8 +356,30 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+	case screenPreview:
+		switch {
+		case msg.String() == "esc" || msg.String() == "q" || key.Matches(msg, keys.enter):
+			m.screen = screenList
+			return m, nil
+		case key.Matches(msg, keys.upload):
+			s := m.selected()
+			if s != nil {
+				m.uploading++
+				m.uploadingName = s.DisplayName()
+				if m.uploadingName == "" {
+					m.uploadingName = s.ID
+				}
+				m.screen = screenList
+				cmds = append(cmds, m.uploadCmd(s.Activity))
+			}
+		}
+		return m, tea.Batch(cmds...)
+
 	case screenList:
 		switch {
+		case msg.String() == "esc":
+			m.screen = screenList
+			return m, nil
 		case key.Matches(msg, keys.quit):
 			return m, tea.Quit
 		case key.Matches(msg, keys.up):
@@ -321,9 +390,19 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.sessions)-1 {
 				m.cursor++
 			}
-		case key.Matches(msg, keys.enter) || key.Matches(msg, keys.upload):
+		case key.Matches(msg, keys.enter):
+			s := m.selected()
+			if s != nil {
+				m.screen = screenPreview
+				return m, nil
+			}
+		case key.Matches(msg, keys.upload):
 			if s := m.selected(); s != nil {
 				m.uploading++
+				m.uploadingName = s.DisplayName()
+				if m.uploadingName == "" {
+					m.uploadingName = s.ID
+				}
 				cmds = append(cmds, m.uploadCmd(s.Activity))
 			}
 		case key.Matches(msg, keys.uploadAll):
@@ -397,20 +476,17 @@ func (m Model) View() string {
 	switch m.screen {
 	case screenLoading, screenList:
 		body = m.renderList()
+	case screenPreview:
+		body = m.renderPreview()
 	case screenSettings:
-		body = renderSettings(m.th, m.settings, m.settingsCursor)
+		body = renderSettings(m.th, m.settings, m.settingsCursor, m.contentW())
 	case screenMFA:
 		body = m.renderMFA()
 	case screenConfirm:
 		body = m.renderConfirm()
 	}
-	var footer string
-	if m.showHelp {
-		footer = m.renderHelp()
-	} else {
-		footer = m.renderStatus()
-	}
-	title := m.th.bold(" whoosh2connect ", m.th.primary)
-	line := " " + m.renderDevice() + " "
-	return strings.Join([]string{title, line, body, footer}, "\n")
+
+	inner := strings.Join([]string{m.renderHeader(), m.renderStats(), body, m.renderFooter()}, "\n")
+	frame := m.th.panel(m.winW() - 2)
+	return frame.Render(inner)
 }

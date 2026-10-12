@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,33 @@ func TestHeadlessNeedsEmails(t *testing.T) {
 	cfg := filepath.Join(t.TempDir(), "config.yaml")
 	code, _, errOut := runForTest(t, "--no-tui", "--config", cfg)
 	if code != 1 || !strings.Contains(errOut, "--mywhoosh-email") {
+		t.Fatalf("code=%d err=%q", code, errOut)
+	}
+}
+
+func TestWatchNeedsGarminEmail(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	code, _, errOut := runForTest(t, "--watch", t.TempDir(), "--config", cfg, "--watch-interval", "1", "--watch-stable", "1")
+	if code != 1 || !strings.Contains(errOut, "--garmin-email") {
+		t.Fatalf("code=%d err=%q", code, errOut)
+	}
+}
+
+func TestWatchRejectsMissingDir(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	code, _, errOut := runForTest(t, "--watch", filepath.Join(t.TempDir(), "nope"), "--garmin-email", "g@x.com", "--config", cfg)
+	if code != 1 || !strings.Contains(errOut, "not a directory") {
+		t.Fatalf("code=%d err=%q", code, errOut)
+	}
+}
+
+func TestWatchAutoOnUnsupportedOSLogsHint(t *testing.T) {
+	if !strings.HasPrefix(strings.ToUpper(runtime.GOOS), "LINUX") {
+		t.Skip("linux-specific")
+	}
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	code, _, errOut := runForTest(t, "--watch", "auto", "--garmin-email", "g@x.com", "--config", cfg)
+	if code != 1 || !strings.Contains(errOut, "--watch") {
 		t.Fatalf("code=%d err=%q", code, errOut)
 	}
 }

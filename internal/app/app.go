@@ -127,7 +127,24 @@ func (s *Service) Upload(ctx context.Context, act mywhoosh.Activity) UploadResul
 	if err != nil {
 		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("download: %w", err)}
 	}
+	return s.uploadFit(ctx, act.ID, fitData)
+}
 
+// ProcessLocalFit fixes and uploads a local MyWhoosh FIT export (watch mode),
+// keying idempotence on the content-hash id returned by the watcher.
+func (s *Service) ProcessLocalFit(ctx context.Context, id, path string) UploadResult {
+	if s.Store.IsUploaded(id) {
+		return UploadResult{Status: StatusSkipped}
+	}
+	fitData, err := os.ReadFile(path)
+	if err != nil {
+		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("read fit: %w", err)}
+	}
+	return s.uploadFit(ctx, id, fitData)
+}
+
+// uploadFit fixes, spoofs, and uploads raw FIT bytes, then records the id.
+func (s *Service) uploadFit(ctx context.Context, id string, fitData []byte) UploadResult {
 	var fixed bytes.Buffer
 	stats, err := fit.Fix(bytes.NewReader(fitData), &fixed, s.Device)
 	if err != nil {
@@ -150,7 +167,7 @@ func (s *Service) Upload(ctx context.Context, act mywhoosh.Activity) UploadResul
 	err = s.Garmin.UploadFIT(ctx, tmp.Name())
 	if err != nil {
 		if errors.Is(err, garmin.ErrDuplicate) {
-			if merr := s.Store.MarkUploaded(act.ID); merr != nil {
+			if merr := s.Store.MarkUploaded(id); merr != nil {
 				return UploadResult{Status: StatusFailed, Err: merr}
 			}
 			return UploadResult{Status: StatusDuplicate, Stats: stats, Err: err}
@@ -158,7 +175,7 @@ func (s *Service) Upload(ctx context.Context, act mywhoosh.Activity) UploadResul
 		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("upload: %w", err)}
 	}
 
-	if err := s.Store.MarkUploaded(act.ID); err != nil {
+	if err := s.Store.MarkUploaded(id); err != nil {
 		return UploadResult{Status: StatusFailed, Err: err}
 	}
 	return UploadResult{Status: StatusUploaded, Stats: stats}

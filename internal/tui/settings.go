@@ -145,7 +145,7 @@ func fieldError(s Settings, i int) string {
 	return ""
 }
 
-func renderSettings(th theme, s Settings, cursor int) string {
+func renderSettings(th theme, s Settings, cursor int, width int) string {
 	var b strings.Builder
 	for i, f := range settingsFields {
 		label := th.paint(f.label, th.text)
@@ -167,5 +167,5 @@ func renderSettings(th theme, s Settings, cursor int) string {
 	}
 	b.WriteString("\n")
 	b.WriteString(th.paint("  save: ctrl+s  next: tab/↓  cancel: esc", th.muted))
-	return b.String()
+	return th.panel(width).Render(strings.TrimSuffix(b.String(), "\n"))
 }

@@ -43,3 +43,17 @@ func (t theme) paint(s string, c lipgloss.Color) string {
 func (t theme) bold(s string, c lipgloss.Color) string {
 	return lipgloss.NewStyle().Foreground(c).Bold(true).Render(s)
 }
+
+// panel returns a rounded, bounded panel styled in the theme.
+func (t theme) panel(width int) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(t.primary).
+		Padding(0, 1).
+		Width(width)
+}
+
+// dim renders s with reduced emphasis.
+func (t theme) dim(s string) string {
+	return lipgloss.NewStyle().Faint(true).Foreground(t.muted).Render(s)
+}

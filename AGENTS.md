@@ -27,13 +27,13 @@ internal/version/     build-time version/commit
 ## Commands
 
 ```
-make build      # build bin/whoosh2connect with version ldflags
-make test       # go test ./...
-make vet        # go vet ./...
-make lint       # golangci-lint run
-make fmt        # gofmt -s -w .
-make tidy       # go mod tidy
-make run        # go run ./cmd/whoosh2connect
+just build     # build bin/whoosh2connect with version ldflags
+just test      # go test ./...
+just vet       # go vet ./...
+just lint      # golangci-lint run
+just fmt       # gofmt -s -w .
+just tidy      # go mod tidy
+just run -- --flags  # go run ./cmd/whoosh2connect
 ```
 
 Always run `gofmt -s -w`, `go vet ./...`, `go test ./...`, and
