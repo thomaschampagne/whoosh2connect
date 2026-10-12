@@ -46,16 +46,16 @@ whoosh2connect --no-tui \
 
 ### Flags
 
-| Flag | Meaning |
-| --- | --- |
-| `--config <path>` | Path to the config YAML (default: XDG config dir) |
-| `--mywhoosh-email <email>` | MyWhoosh account email |
-| `--garmin-email <email>` | Garmin Connect email |
-| `--device-preset <id>` | Device to spoof (e.g. `edge_540`, `edge_1030`) |
-| `--device-name <name>` | Override the displayed device name |
-| `--device-serial <n>` | Override the device serial (non-zero uint32) |
-| `--no-tui` | Run headless and exit |
-| `--version` | Print version and exit |
+| Flag                       | Meaning                                           |
+| -------------------------- | ------------------------------------------------- |
+| `--config <path>`          | Path to the config YAML (default: XDG config dir) |
+| `--mywhoosh-email <email>` | MyWhoosh account email                            |
+| `--garmin-email <email>`   | Garmin Connect email                              |
+| `--device-preset <id>`     | Device to spoof (e.g. `edge_540`, `edge_1030`)    |
+| `--device-name <name>`     | Override the displayed device name                |
+| `--device-serial <n>`      | Override the device serial (non-zero uint32)      |
+| `--no-tui`                 | Run headless and exit                             |
+| `--version`                | Print version and exit                            |
 
 Passwords are never taken from the config file or flags. In the TUI you enter
 them on the settings screen (held in memory only). Headless mode reads them from
@@ -80,22 +80,22 @@ garmin:
   email: you@example.com
 device:
   preset: edge_540
-  name: ""          # optional override
-  serial: 0         # 0 means "generate once and persist"
+  name: "" # optional override
+  serial: 0 # 0 means "generate once and persist"
 ```
 
 Environment variables:
 
-| Variable | Purpose |
-| --- | --- |
-| `WHOOSH2CONNECT_CONFIG` | Config file path |
-| `WHOOSH2CONNECT_MYWHOOSH_EMAIL` | MyWhoosh email |
-| `WHOOSH2CONNECT_GARMIN_EMAIL` | Garmin email |
+| Variable                           | Purpose                      |
+| ---------------------------------- | ---------------------------- |
+| `WHOOSH2CONNECT_CONFIG`            | Config file path             |
+| `WHOOSH2CONNECT_MYWHOOSH_EMAIL`    | MyWhoosh email               |
+| `WHOOSH2CONNECT_GARMIN_EMAIL`      | Garmin email                 |
 | `WHOOSH2CONNECT_MYWHOOSH_PASSWORD` | MyWhoosh password (headless) |
-| `WHOOSH2CONNECT_GARMIN_PASSWORD` | Garmin password (headless) |
-| `WHOOSH2CONNECT_DEVICE_PRESET` | Device preset ID |
-| `WHOOSH2CONNECT_DEVICE_NAME` | Device name override |
-| `WHOOSH2CONNECT_DEVICE_SERIAL` | Device serial override |
+| `WHOOSH2CONNECT_GARMIN_PASSWORD`   | Garmin password (headless)   |
+| `WHOOSH2CONNECT_DEVICE_PRESET`     | Device preset ID             |
+| `WHOOSH2CONNECT_DEVICE_NAME`       | Device name override         |
+| `WHOOSH2CONNECT_DEVICE_SERIAL`     | Device serial override       |
 
 ## Device presets
 
@@ -131,13 +131,13 @@ supported:
 
 ## Files and security
 
-| Path | Contents |
-| --- | --- |
-| `~/.config/whoosh2connect/config.yaml` | Non-secret config (emails, device) |
-| `~/.local/share/whoosh2connect/` | Data directory |
-| `…/oauth1_token.json`, `…/oauth2_token.json` | Garmin tokens (mode `0600`) |
-| `…/mywhoosh_token.json` | MyWhoosh token (mode `0600`) |
-| `…/state.json` | Uploaded activity IDs for idempotence (mode `0600`) |
+| Path                                         | Contents                                            |
+| -------------------------------------------- | --------------------------------------------------- |
+| `~/.config/whoosh2connect/config.yaml`       | Non-secret config (emails, device)                  |
+| `~/.local/share/whoosh2connect/`             | Data directory                                      |
+| `…/oauth1_token.json`, `…/oauth2_token.json` | Garmin tokens (mode `0600`)                         |
+| `…/mywhoosh_token.json`                      | MyWhoosh token (mode `0600`)                        |
+| `…/state.json`                               | Uploaded activity IDs for idempotence (mode `0600`) |
 
 - Passwords are never written to disk, never passed as flags, and never logged.
 - MFA codes are used once and discarded.
