@@ -64,11 +64,10 @@ func (m Model) renderList() string {
 		return b.String()
 	}
 	for i, s := range m.sessions {
-		marker := " "
-		switch {
-		case s.Uploaded:
+		var marker string
+		if s.Uploaded {
 			marker = th.paint("✓", th.success)
-		default:
+		} else {
 			marker = th.paint("•", th.muted)
 		}
 		if i == m.cursor && m.screen == screenList {

@@ -168,7 +168,7 @@ func TestApplyRoundTripThroughEncoder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }()
 	if err := encoder.New(fh, encoder.WithProtocolVersion(2)).Encode(&f); err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestApplyRoundTripThroughEncoder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer back.Close()
+	defer func() { _ = back.Close() }()
 	lis := filedef.NewListener()
 	defer lis.Close()
 	if _, err := decoder.New(back, decoder.WithMesgListener(lis), decoder.WithBroadcastOnly()).Decode(); err != nil {

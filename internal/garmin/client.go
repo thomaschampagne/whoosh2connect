@@ -212,7 +212,7 @@ func (c *Client) doUpload(ctx context.Context, filePath string) (int, []byte, er
 	if err != nil {
 		return 0, nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
@@ -243,7 +243,7 @@ func (c *Client) doUpload(ctx context.Context, filePath string) (int, []byte, er
 	if err != nil {
 		return 0, nil, fmt.Errorf("upload request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return 0, nil, err

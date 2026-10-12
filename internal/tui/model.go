@@ -143,13 +143,13 @@ func (m Model) bootstrapCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		if err := m.svc.LoginMyWhoosh(ctx, m.settings.MywhooshEmail, m.settings.MywhooshPassword); err != nil {
-			return bootstrapMsg{err: fmt.Errorf("MyWhoosh login: %w", err)}
+			return bootstrapMsg{err: fmt.Errorf("mywhoosh login: %w", err)}
 		}
 		if err := m.svc.LoginGarmin(ctx, m.settings.GarminEmail, m.settings.GarminPassword); err != nil {
 			if errors.Is(err, garmin.ErrMFARequired) {
 				return bootstrapMsg{mfa: true}
 			}
-			return bootstrapMsg{err: fmt.Errorf("Garmin login: %w", err)}
+			return bootstrapMsg{err: fmt.Errorf("garmin login: %w", err)}
 		}
 		sessions, err := m.svc.Sessions(ctx)
 		return bootstrapMsg{sessions: sessions, err: err}

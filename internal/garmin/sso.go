@@ -17,7 +17,7 @@ import (
 
 // ErrMFARequired signals that login hit a two-factor challenge and the caller
 // must collect the code and call SubmitMFA.
-var ErrMFARequired = errors.New("Garmin requires a verification code (MFA)")
+var ErrMFARequired = errors.New("garmin requires a verification code (MFA)")
 
 const (
 	clientID          = "GCM_ANDROID_DARK"
@@ -63,7 +63,7 @@ func fetchConsumer(ctx context.Context, hc *http.Client, url string) (*oauthCons
 	if err != nil {
 		return nil, fmt.Errorf("fetch consumer: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("consumer fetch HTTP %d", resp.StatusCode)
 	}
@@ -205,10 +205,8 @@ func (f *ssoFlow) SubmitMFA(ctx context.Context, code string) (*OAuth1Token, *OA
 
 // complete finishes the flow: best-effort LB cookie, then OAuth1 + OAuth2.
 func (f *ssoFlow) complete(ctx context.Context, ticket string) (*OAuth1Token, *OAuth2Token, error) {
-	// Sets Cloudflare LB cookie for backend pinning — best-effort.
-	if _, err := f.get(ctx, f.hosts.sso+"/portal/sso/embed", browserHeaders(), true); err != nil {
-		// Non-fatal per reference.
-	}
+	// Cloudflare LB cookie for backend pinning — best-effort, non-fatal.
+	_, _ = f.get(ctx, f.hosts.sso+"/portal/sso/embed", browserHeaders(), true)
 
 	oauth1Token, err := f.getOAuth1Token(ctx, ticket)
 	if err != nil {
@@ -239,7 +237,7 @@ func (f *ssoFlow) getOAuth1Token(ctx context.Context, ticket string) (*OAuth1Tok
 	if err != nil {
 		return nil, fmt.Errorf("preauthorized request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -286,7 +284,7 @@ func (f *ssoFlow) exchangeOAuth2(ctx context.Context, oauth1Token *OAuth1Token) 
 	if err != nil {
 		return nil, fmt.Errorf("exchange request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -356,7 +354,7 @@ func (f *ssoFlow) do(ctx context.Context, req *http.Request, headers http.Header
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	f.lastURL = resp.Request.URL.String()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -18,9 +18,9 @@ type Settings struct {
 func (s Settings) Validate() error {
 	switch {
 	case s.MywhooshEmail == "":
-		return fmt.Errorf("MyWhoosh email is required")
+		return fmt.Errorf("mywhoosh email is required")
 	case s.GarminEmail == "":
-		return fmt.Errorf("Garmin email is required")
+		return fmt.Errorf("garmin email is required")
 	}
 	return nil
 }

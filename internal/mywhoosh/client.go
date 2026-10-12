@@ -137,7 +137,7 @@ func (c *Client) Login(ctx context.Context, email, password string) error {
 	if err != nil {
 		return fmt.Errorf("login request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -198,7 +198,7 @@ func (c *Client) ListActivities(ctx context.Context) ([]Activity, error) {
 			return nil, fmt.Errorf("activities request: %w", err)
 		}
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return nil, fmt.Errorf("read response: %w", err)
 		}
@@ -247,7 +247,7 @@ func (c *Client) DownloadFit(ctx context.Context, fileID string) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("download request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
@@ -274,7 +274,7 @@ func (c *Client) DownloadFit(ctx context.Context, fileID string) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("fetch FIT file: %w", err)
 	}
-	defer fitResp.Body.Close()
+	defer func() { _ = fitResp.Body.Close() }()
 	fitData, err := io.ReadAll(fitResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read FIT file: %w", err)

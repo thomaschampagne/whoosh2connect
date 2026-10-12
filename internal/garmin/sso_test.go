@@ -3,7 +3,6 @@ package garmin
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,31 +24,31 @@ type mockGarmin struct {
 func newMock(t *testing.T) (*mockGarmin, *httptest.Server) {
 	m := &mockGarmin{t: t}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/oauth_consumer.json":
+		switch r.URL.Path {
+		case "/oauth_consumer.json":
 			_, _ = w.Write([]byte(testConsumer))
-		case r.URL.Path == "/mobile/sso/en/sign-in":
+		case "/mobile/sso/en/sign-in":
 			w.Header().Set("Set-Cookie", "SESS=xyz; Path=/")
 			_, _ = w.Write([]byte("<html></html>"))
-		case r.URL.Path == "/mobile/api/login":
+		case "/mobile/api/login":
 			if err := json.NewDecoder(r.Body).Decode(&m.gotLogin); err != nil {
 				t.Errorf("decode login body: %v", err)
 			}
 			_, _ = w.Write([]byte(m.loginResp))
-		case r.URL.Path == "/mobile/api/mfa/verifyCode":
+		case "/mobile/api/mfa/verifyCode":
 			if err := json.NewDecoder(r.Body).Decode(&m.gotVerify); err != nil {
 				t.Errorf("decode verify body: %v", err)
 			}
 			_, _ = w.Write([]byte(m.verifyResp))
-		case r.URL.Path == "/portal/sso/embed":
+		case "/portal/sso/embed":
 			_, _ = w.Write([]byte("ok"))
-		case r.URL.Path == "/oauth-service/oauth/preauthorized":
+		case "/oauth-service/oauth/preauthorized":
 			m.sawOAuth1 = true
 			if auth := r.Header.Get("Authorization"); !strings.Contains(auth, "oauth_consumer_key") || !strings.Contains(auth, "oauth_signature") {
 				t.Errorf("preauthorized missing OAuth1 auth: %q", auth)
 			}
 			_, _ = w.Write([]byte("oauth_token=ot1&oauth_token_secret=os1"))
-		case r.URL.Path == "/oauth-service/oauth/exchange/user/2.0":
+		case "/oauth-service/oauth/exchange/user/2.0":
 			m.sawExchange = true
 			if auth := r.Header.Get("Authorization"); !strings.Contains(auth, "oauth_consumer_key") {
 				t.Errorf("exchange missing OAuth1 auth: %q", auth)
@@ -187,7 +186,7 @@ func TestSubmitMFAWithoutPending(t *testing.T) {
 
 func TestExchangeNoAccessToken(t *testing.T) {
 	m, srv := newMock(t)
-	m.loginResp = fmt.Sprintf(`{"responseStatus":{"type":"SUCCESSFUL","message":"ok"},"serviceTicketId":"t1"}`)
+	m.loginResp = `{"responseStatus":{"type":"SUCCESSFUL","message":"ok"},"serviceTicketId":"t1"}`
 	h := testHosts(srv)
 	// Override exchange to return no access token.
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
