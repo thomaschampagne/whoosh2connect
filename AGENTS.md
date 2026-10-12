@@ -23,6 +23,23 @@ internal/app/         orchestration: download → fix → upload → mark, sessi
 internal/tui/         Bubble Tea model, views, settings, MFA screen
 internal/version/     build-time version/commit
 ```
+## Agent communication style
+
+Reply in caveman mode (terse, fragments, no filler/preamble/postamble). Exact values for code, paths, names. Code, comments, README, AGENTS.md written normally, not caveman.
+
+## Superpowers
+
+- Superpowers skills installed. Before ANY task, check for relevant skill and invoke it. Mandatory, not optional.
+- New feature or behavior change: `brainstorming` first. No code before design approved.
+- After design: `using-git-worktrees`, then `writing-plans`, then `subagent-driven-development` or `executing-plans`.
+- Implementation: `test-driven-development`. RED, GREEN, REFACTOR. Write failing test first, watch fail.
+- Bug or failing test: `systematic-debugging`. Root cause before fix.
+- Before claiming done: `verification-before-completion`. Run command, show output. Evidence over claim.
+- Between tasks: `requesting-code-review`. Critical issues block.
+- Branch finished: `finishing-a-development-branch`.
+- Principles: YAGNI, DRY, simplicity first.
+- If skill seem skipped, say so and invoke it
+- Think in caveman mode
 
 ## Commands
 
