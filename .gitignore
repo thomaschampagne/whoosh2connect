@@ -1,0 +1,4 @@
+/bin/
+*.fit
+*.synced
+.superpowers/
