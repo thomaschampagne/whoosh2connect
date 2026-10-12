@@ -48,11 +48,10 @@ type fakeGarmin struct {
 	path    string
 }
 
-func (f *fakeGarmin) Resume(ctx context.Context) error { return nil }
+func (f *fakeGarmin) Resume(ctx context.Context) error { return errors.New("no session") }
 func (f *fakeGarmin) Login(ctx context.Context, e, p string) error {
 	return f.err
 }
-func (f *fakeGarmin) NeedsMFA() bool { return f.err == garmin.ErrMFARequired }
 func (f *fakeGarmin) SubmitMFA(ctx context.Context, code string) error {
 	return nil
 }

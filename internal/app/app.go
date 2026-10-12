@@ -38,7 +38,6 @@ type MyWhooshAPI interface {
 type GarminAPI interface {
 	Resume(ctx context.Context) error
 	Login(ctx context.Context, email, password string) error
-	NeedsMFA() bool
 	SubmitMFA(ctx context.Context, code string) error
 	UploadFIT(ctx context.Context, filePath string) error
 }
@@ -84,13 +83,15 @@ func (s *Service) LoginMyWhoosh(ctx context.Context, email, password string) err
 // LoginGarmin resumes a cached session or logs in fresh, returning
 // garmin.ErrMFARequired when a verification code is needed.
 func (s *Service) LoginGarmin(ctx context.Context, email, password string) error {
-	if s.Garmin.NeedsMFA() {
-		return garmin.ErrMFARequired
-	}
 	if err := s.Garmin.Resume(ctx); err == nil {
 		return nil
 	}
 	return s.Garmin.Login(ctx, email, password)
+}
+
+// SubmitMFA submits a verification code for a pending Garmin login.
+func (s *Service) SubmitMFA(ctx context.Context, code string) error {
+	return s.Garmin.SubmitMFA(ctx, code)
 }
 
 // Sessions lists activities with upload status.
@@ -137,8 +138,8 @@ func (s *Service) Upload(ctx context.Context, act mywhoosh.Activity) UploadResul
 	if err != nil {
 		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("temp file: %w", err)}
 	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	defer func() { _ = tmp.Close() }()
 	if _, err := tmp.Write(fixed.Bytes()); err != nil {
 		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("write temp: %w", err)}
 	}
