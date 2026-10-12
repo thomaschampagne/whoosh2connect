@@ -173,6 +173,7 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 			},
 		}),
 		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	)
 	if _, err := p.Run(); err != nil {
 		write(stderr, "tui: %v\n", err)

@@ -205,19 +205,27 @@ func TestSettingsNavigateAndSave(t *testing.T) {
 		t.Fatalf("field0 = %q", fieldValue(m.settings, 0))
 	}
 
+	// Invalid save stays on the form, shows an error, and focuses the first
+	// offending field (Garmin email).
 	upd(t, &m, tea.KeyMsg{Type: tea.KeyCtrlS})
 	if m.screen != screenSettings || m.status == "" {
 		t.Fatalf("invalid save: screen=%v status=%q", m.screen, m.status)
 	}
+	if m.form.focus != fldGarminEmail {
+		t.Fatalf("focus = %d, want Garmin email", m.form.focus)
+	}
 
-	upd(t, &m, tea.KeyMsg{Type: tea.KeyTab})
+	// shift+tab navigates backwards (form nav fix).
+	upd(t, &m, tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.form.focus != fldMywhooshPassword {
+		t.Fatalf("shift+tab focus = %d, want MyWhoosh password", m.form.focus)
+	}
+
 	upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("mwpass")})
-	upd(t, &m, tea.KeyMsg{Type: tea.KeyTab})
-	upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g@x.com")})
-	upd(t, &m, tea.KeyMsg{Type: tea.KeyTab})
-	upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("gpass")})
-	upd(t, &m, tea.KeyMsg{Type: tea.KeyTab})
-	upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("edge_540")})
+	for _, v := range []string{"g@x.com", "gpass", "edge_540"} {
+		upd(t, &m, tea.KeyMsg{Type: tea.KeyTab})
+		upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(v)})
+	}
 
 	cmd := upd(t, &m, tea.KeyMsg{Type: tea.KeyCtrlS})
 	if m.screen != screenLoading {

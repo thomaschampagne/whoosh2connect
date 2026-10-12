@@ -22,9 +22,9 @@ func TestSettingsValidate(t *testing.T) {
 		{name: "unknown preset", s: Settings{MywhooshEmail: "m@x.com", GarminEmail: "g@x.com", DevicePreset: "edge_999"},
 			wantErr: "preset"},
 		{name: "bad serial", s: Settings{MywhooshEmail: "m@x.com", GarminEmail: "g@x.com", DevicePreset: "edge_540", DeviceSerial: "xyz"},
-			wantErr: "serial must be a non-zero uint32"},
+			wantErr: "device serial must be a whole number"},
 		{name: "zero serial", s: Settings{MywhooshEmail: "m@x.com", GarminEmail: "g@x.com", DevicePreset: "edge_540", DeviceSerial: "0"},
-			wantErr: "serial must be a non-zero uint32"},
+			wantErr: "device serial must be a whole number"},
 		{name: "ok with serial", s: Settings{MywhooshEmail: "m@x.com", GarminEmail: "g@x.com", DevicePreset: "edge_540", DeviceSerial: "123456789", DeviceName: "My Edge"}},
 	}
 	for _, tt := range tests {

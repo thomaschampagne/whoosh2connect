@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -47,89 +46,33 @@ type Options struct {
 
 // Model is the Bubble Tea state machine.
 type Model struct {
-	svc            Service
-	settings       Settings
-	saveFn         func(Settings) error
-	th             theme
-	screen         screen
-	cursor         int
-	settingsCursor int
-	confirm        int
-	sessions       []app.Session
-	results        map[string]string
-	status         string
-	mfaInput       textinput.Model
-	mfaMethod      string
-	uploading      int
-	uploadingName  string
-	showHelp       bool
-	width          int
-	height         int
-	spinner        spinner.Model
-	page           int
-	pageSizeVal    int
-}
+	svc      Service
+	settings Settings
+	saveFn   func(Settings) error
+	th       theme
 
-func (m Model) pageSize() int {
-	if m.pageSizeVal > 0 {
-		return m.pageSizeVal
-	}
-	return 10
-}
+	screen  screen
+	cursor  int
+	confirm int
+	form    settingsForm
 
-func (m *Model) clampPage() {
-	max := m.pageCount()
-	if max <= 0 {
-		m.page = 0
-		return
-	}
-	if m.page >= max {
-		m.page = max - 1
-	}
-	if m.page < 0 {
-		m.page = 0
-	}
-}
+	sessions      []app.Session
+	results       map[string]string
+	status        string
+	mfaInput      textinput.Model
+	uploading     int
+	uploadingName string
 
-func (m Model) pageCount() int {
-	n := len(m.sessions)
-	ps := m.pageSize()
-	if n == 0 {
-		return 1
-	}
-	p := n / ps
-	if n%ps != 0 {
-		p++
-	}
-	return p
-}
+	showHelp bool
+	showLog  bool
+	logs     logBuffer
 
-func (m Model) pageStart() int {
-	return m.page * m.pageSize()
-}
+	width  int
+	height int
 
-type keymap struct {
-	up        key.Binding
-	down      key.Binding
-	enter     key.Binding
-	upload    key.Binding
-	uploadAll key.Binding
-	settings  key.Binding
-	refresh   key.Binding
-	help      key.Binding
-	quit      key.Binding
-}
-
-var keys = keymap{
-	up:        key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-	down:      key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-	enter:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "upload")),
-	upload:    key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "upload")),
-	uploadAll: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "upload all")),
-	settings:  key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "settings")),
-	refresh:   key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
-	help:      key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	quit:      key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	spinner     spinner.Model
+	page        int
+	pageSizeVal int
 }
 
 // New creates a Model.
@@ -153,8 +96,11 @@ func New(opts Options) Model {
 	m.spinner.Spinner = spinner.Dot
 	m.mfaInput = textinput.New()
 	m.mfaInput.Placeholder = "6-digit code"
-	m.mfaInput.Prompt = " MFA code: "
+	m.mfaInput.Prompt = "  "
 	m.mfaInput.CharLimit = 12
+	m.form = newSettingsForm(th, opts.Settings)
+	m.form.setWidth(m.innerW())
+	m.logf(logInfo, "whoosh2connect %s starting", shortVersion())
 	return m
 }
 
@@ -180,6 +126,11 @@ type uploadMsg struct {
 }
 
 type mfaMsg struct{ err error }
+
+// logf appends an entry to the in-model log panel.
+func (m *Model) logf(level logLevel, format string, a ...interface{}) {
+	m.logs.add(level, fmt.Sprintf(format, a...))
+}
 
 func (m Model) bootstrapCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -229,23 +180,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.width, m.height = msg.Width, msg.Height
+		m.form.setWidth(m.innerW())
+		m.clampCursor()
+		m.clampPage()
+		m.ensureCursorVisible()
+		m.logs.clamp(max(0, m.logViewHeight()))
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 
 	case bootstrapMsg:
 		if msg.err != nil {
 			m.status = m.th.paint(msg.err.Error(), m.th.danger)
+			m.logf(logError, "%s", msg.err.Error())
 			m.screen = screenSettings
-			return m, nil
+			m.form = newSettingsForm(m.th, m.settings)
+			m.form.setWidth(m.innerW())
+			target := 0
+			if i := m.settings.errorField(); i >= 0 {
+				target = i
+			}
+			cmds = append(cmds, m.form.focusField(target))
+			return m, tea.Batch(cmds...)
 		}
 		if msg.mfa {
+			m.logf(logInfo, "garmin requires a verification code")
 			m.screen = screenMFA
+			m.status = ""
+			m.mfaInput.SetValue("")
 			cmds = append(cmds, m.mfaInput.Focus())
 			return m, tea.Batch(cmds...)
 		}
 		m.sessions = msg.sessions
 		m.screen = screenList
 		m.page = 0
+		m.logf(logSuccess, "loaded %d session(s)", len(msg.sessions))
 		m.clampCursor()
 		m.clampPage()
 
@@ -254,11 +224,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.page = 0
 		if msg.err != nil {
 			m.status = m.th.paint(msg.err.Error(), m.th.danger)
+			m.logf(logError, "refresh failed: %s", msg.err.Error())
 			return m, nil
 		}
 		m.sessions = msg.sessions
+		m.logf(logSuccess, "refreshed: %d session(s)", len(msg.sessions))
 		m.clampCursor()
-		m.clampPage()
 		m.clampPage()
 
 	case uploadMsg:
@@ -270,13 +241,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.results[msg.id] = text
 		}
 		m.status = m.th.paint(msgPrefix(msg.id)+text, resultColor(m.th, msg.res))
+		m.logf(resultLevel(msg.res), "upload %s%s", msgPrefix(msg.id), text)
 
 	case mfaMsg:
 		if msg.err != nil {
 			m.status = m.th.paint("MFA failed: "+msg.err.Error(), m.th.danger)
+			m.logf(logError, "MFA failed: %s", msg.err.Error())
+			m.mfaInput.SetValue("")
 			cmds = append(cmds, m.mfaInput.Focus())
 			return m, tea.Batch(cmds...)
 		}
+		m.logf(logSuccess, "MFA accepted")
 		m.status = ""
 		return m, m.refreshCmd()
 
@@ -287,31 +262,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *Model) clampCursor() {
-	if m.cursor >= len(m.sessions) {
-		m.cursor = len(m.sessions) - 1
-	}
-	if m.cursor < 0 {
-		m.cursor = 0
+func resultLevel(res app.UploadResult) logLevel {
+	switch res.Status {
+	case app.StatusUploaded:
+		return logSuccess
+	case app.StatusDuplicate, app.StatusSkipped:
+		return logInfo
+	default:
+		return logError
 	}
 }
 
 func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
 	switch m.screen {
 	case screenMFA:
-		switch {
-		case msg.String() == "enter":
+		switch msg.String() {
+		case "esc":
+			m.screen = screenList
+			return m, nil
+		case "enter":
 			code := strings.TrimSpace(m.mfaInput.Value())
 			if code == "" {
 				return m, nil
 			}
 			m.uploading = 1
 			m.uploadingName = "Garmin login"
-			m.uploadingName = "Garmin login"
+			m.logf(logInfo, "submitting verification code")
 			return m, m.mfaCmd(code)
-		case key.Matches(msg, key.NewBinding(key.WithKeys("esc", "q"))):
-			m.screen = screenList
-			return m, nil
 		default:
 			var cmd tea.Cmd
 			m.mfaInput, cmd = m.mfaInput.Update(msg)
@@ -319,125 +300,284 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 		}
 
 	case screenConfirm:
-		switch {
-		case msg.String() == "y" || msg.String() == "enter":
+		switch msg.String() {
+		case "y", "enter":
 			m.screen = screenList
+			m.logf(logInfo, "uploading %d pending ride(s)", m.confirm)
 			return m, m.uploadAllCmd()
-		case msg.String() == "n" || msg.String() == "esc" || msg.String() == "q":
+		case "n", "esc":
 			m.screen = screenList
-			return m, nil
-		default:
-			return m, nil
 		}
+		return m, nil
 
 	case screenSettings:
-		switch {
-		case msg.String() == "ctrl+s":
-			return m.saveSettings()
-		case msg.String() == "tab" || msg.String() == "down" || msg.String() == "enter":
-			m.settingsCursor = (m.settingsCursor + 1) % len(settingsFields)
-			return m, nil
-		case msg.String() == "up":
-			m.settingsCursor = (m.settingsCursor - 1 + len(settingsFields)) % len(settingsFields)
-			return m, nil
-		case msg.String() == "esc" || msg.String() == "q":
+		switch msg.String() {
+		case "esc":
+			if len(m.form.sugg) > 0 {
+				m.form.sugg = nil
+				return m, nil
+			}
 			m.screen = screenList
+			m.status = ""
 			return m, nil
-		case msg.String() == "backspace":
-			v := fieldValue(m.settings, m.settingsCursor)
-			if len(v) > 0 {
-				m.settings.setField(m.settingsCursor, v[:len(v)-1])
-			}
-			return m, nil
+		case "ctrl+s":
+			return m.saveSettings()
 		default:
-			if msg.Type == tea.KeyRunes {
-				m.settings.setField(m.settingsCursor, fieldValue(m.settings, m.settingsCursor)+string(msg.Runes))
-			}
-			return m, nil
+			cmd := m.form.update(msg)
+			m.form.apply(&m.settings)
+			return m, cmd
 		}
 
 	case screenPreview:
-		switch {
-		case msg.String() == "esc" || msg.String() == "q" || key.Matches(msg, keys.enter):
+		switch msg.String() {
+		case "esc":
 			m.screen = screenList
-			return m, nil
-		case key.Matches(msg, keys.upload):
-			s := m.selected()
-			if s != nil {
-				m.uploading++
-				m.uploadingName = s.DisplayName()
-				if m.uploadingName == "" {
-					m.uploadingName = s.ID
-				}
-				m.screen = screenList
-				cmds = append(cmds, m.uploadCmd(s.Activity))
-			}
+		case "u":
+			m.screen = screenList
+			cmds = append(cmds, m.startUpload(m.selected()))
 		}
 		return m, tea.Batch(cmds...)
-
-	case screenList:
-		switch {
-		case msg.String() == "esc":
-			m.screen = screenList
-			return m, nil
-		case key.Matches(msg, keys.quit):
-			return m, tea.Quit
-		case key.Matches(msg, keys.up):
-			if m.cursor > 0 {
-				m.cursor--
-			}
-		case key.Matches(msg, keys.down):
-			if m.cursor < len(m.sessions)-1 {
-				m.cursor++
-			}
-		case key.Matches(msg, keys.enter):
-			s := m.selected()
-			if s != nil {
-				m.screen = screenPreview
-				return m, nil
-			}
-		case key.Matches(msg, keys.upload):
-			if s := m.selected(); s != nil {
-				m.uploading++
-				m.uploadingName = s.DisplayName()
-				if m.uploadingName == "" {
-					m.uploadingName = s.ID
-				}
-				cmds = append(cmds, m.uploadCmd(s.Activity))
-			}
-		case key.Matches(msg, keys.uploadAll):
-			if m.pendingCount() > 0 {
-				m.confirm = m.pendingCount()
-				m.screen = screenConfirm
-			}
-		case key.Matches(msg, keys.settings):
-			m.screen = screenSettings
-		case key.Matches(msg, keys.refresh):
-			cmds = append(cmds, m.refreshCmd())
-		case key.Matches(msg, keys.help):
-			m.showHelp = !m.showHelp
-		}
 	}
 
+	// screenLoading, screenList
+	switch msg.String() {
+	case "esc":
+		if m.showHelp {
+			m.showHelp = false
+		} else if m.showLog {
+			m.showLog = false
+		}
+	case "q":
+		return m, tea.Quit
+	case "?":
+		m.showHelp = !m.showHelp
+	case "l":
+		m.toggleLogs()
+	case "up", "k":
+		if m.movingLogs() {
+			m.scrollLogs(1)
+		} else {
+			m.moveCursor(-1)
+		}
+	case "down", "j":
+		if m.movingLogs() {
+			m.scrollLogs(-1)
+		} else {
+			m.moveCursor(1)
+		}
+	case "left", "pgup":
+		if !m.showHelp && !m.showLog {
+			m.pageBy(-1)
+		}
+	case "right", "pgdown":
+		if !m.showHelp && !m.showLog {
+			m.pageBy(1)
+		}
+	case "enter":
+		if !m.showHelp && !m.showLog {
+			if s := m.selected(); s != nil {
+				m.screen = screenPreview
+			}
+		}
+	case "u":
+		cmds = append(cmds, m.startUpload(m.selected()))
+	case "a":
+		if n := m.pendingCount(); n > 0 {
+			m.confirm = n
+			m.screen = screenConfirm
+		}
+	case "s":
+		m.form = newSettingsForm(m.th, m.settings)
+		m.form.setWidth(m.innerW())
+		m.screen = screenSettings
+		cmds = append(cmds, m.form.focusField(0))
+	case "r":
+		m.logf(logInfo, "refreshing sessions…")
+		cmds = append(cmds, m.refreshCmd())
+	}
 	return m, tea.Batch(cmds...)
 }
 
+// handleMouse maps clicks and wheel events onto the current layout.
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	inner := msg.Y - 1 // top border only; frame has no vertical padding
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if m.mouseInLog(msg) {
+			m.scrollLogs(1)
+		} else if m.screen == screenList || m.screen == screenLoading {
+			m.moveCursor(-1)
+		}
+		return m, nil
+	case tea.MouseButtonWheelDown:
+		if m.mouseInLog(msg) {
+			m.scrollLogs(-1)
+		} else if m.screen == screenList || m.screen == screenLoading {
+			m.moveCursor(1)
+		}
+		return m, nil
+	}
+
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	}
+	if m.showHelp {
+		m.showHelp = false
+		return m, nil
+	}
+
+	var cmds []tea.Cmd
+	switch m.screen {
+	case screenLoading, screenList:
+		if m.showLog && inner >= bodyTop+m.listHeight() {
+			return m, nil
+		}
+		idx := inner - bodyTop
+		page := m.pageSessions()
+		if idx < 0 || idx >= len(page) {
+			return m, nil
+		}
+		cursor := m.pageStart() + idx
+		if cursor == m.cursor {
+			if s := m.selected(); s != nil {
+				m.screen = screenPreview
+			}
+		} else {
+			m.cursor = cursor
+		}
+	case screenSettings:
+		if i, ok := m.form.suggestionAt(inner); ok {
+			m.form.suggIdx = i
+			m.form.acceptSuggestion()
+			m.form.apply(&m.settings)
+			return m, nil
+		}
+		for i := range settingsFields {
+			if m.form.fieldRow(i) == inner {
+				cmds = append(cmds, m.form.focusField(i))
+				return m, tea.Batch(cmds...)
+			}
+		}
+	case screenConfirm:
+		m.screen = screenList
+		cmds = append(cmds, m.uploadAllCmd())
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// mouseInLog reports whether the event falls on the log pane.
+func (m Model) mouseInLog(msg tea.MouseMsg) bool {
+	if !m.showLog || m.showHelp {
+		return false
+	}
+	inner := msg.Y - 1
+	if m.screen == screenLoading || m.screen == screenList {
+		return inner >= bodyTop+m.listHeight()
+	}
+	return inner >= bodyTop
+}
+
+// logViewHeight is the number of scrollable rows in the log pane.
+func (m Model) logViewHeight() int {
+	if m.screen == screenLoading || m.screen == screenList {
+		return max(1, m.logPaneHeight()-1)
+	}
+	return max(1, m.bodyH()-1)
+}
+
+func (m *Model) scrollLogs(delta int) {
+	m.logs.scroll += delta
+	m.logs.clamp(m.logViewHeight())
+}
+
+func (m Model) movingLogs() bool {
+	return m.showLog && !m.showHelp
+}
+
+func (m *Model) toggleLogs() {
+	m.showLog = !m.showLog
+	if m.showLog {
+		m.logs.scroll = 0
+		m.logs.clamp(m.logViewHeight())
+	}
+	m.clampCursor()
+	m.clampPage()
+	m.ensureCursorVisible()
+}
+
+func (m *Model) moveCursor(delta int) {
+	if len(m.sessions) == 0 {
+		return
+	}
+	m.cursor += delta
+	m.clampCursor()
+	m.ensureCursorVisible()
+}
+
+func (m *Model) pageBy(delta int) {
+	if m.pageCount() <= 1 {
+		return
+	}
+	m.page += delta
+	m.clampPage()
+	m.cursor = m.pageStart()
+	m.clampCursor()
+}
+
+func (m *Model) ensureCursorVisible() {
+	if len(m.sessions) == 0 {
+		return
+	}
+	ps := m.pageSize()
+	if m.cursor < m.pageStart() || m.cursor >= m.pageStart()+ps {
+		m.page = m.cursor / ps
+	}
+	m.clampPage()
+}
+
 func (m Model) saveSettings() (tea.Model, tea.Cmd) {
+	m.form.apply(&m.settings)
 	if err := m.settings.Validate(); err != nil {
 		m.status = m.th.paint(err.Error(), m.th.danger)
+		m.logf(logError, "settings: %s", err.Error())
+		if i := m.settings.errorField(); i >= 0 {
+			return m, m.form.focusField(i)
+		}
 		return m, nil
 	}
 	if err := m.saveFn(m.settings); err != nil {
 		m.status = m.th.paint(err.Error(), m.th.danger)
+		m.logf(logError, "could not save settings: %s", err.Error())
 		return m, nil
 	}
+	m.logf(logSuccess, "settings saved")
 	m.screen = screenLoading
 	m.status = ""
 	return m, m.bootstrapCmd()
 }
 
+func (m *Model) startUpload(s *app.Session) tea.Cmd {
+	if s == nil {
+		return nil
+	}
+	name := s.DisplayName()
+	if name == "" {
+		name = s.ID
+	}
+	if s.Uploaded {
+		m.status = m.th.paint("already synced", m.th.secondary)
+		m.logf(logInfo, "%s already synced", name)
+		return nil
+	}
+	m.uploading++
+	m.uploadingName = name
+	m.logf(logInfo, "uploading %s", name)
+	return m.uploadCmd(s.Activity)
+}
+
 func (m Model) uploadAllCmd() tea.Cmd {
-	acts := make([]mywhoosh.Activity, 0)
+	acts := make([]mywhoosh.Activity, 0, len(m.sessions))
 	for _, s := range m.sessions {
 		if !s.Uploaded {
 			acts = append(acts, s.Activity)
@@ -470,23 +610,45 @@ func (m Model) pendingCount() int {
 	return n
 }
 
-// View renders the current screen.
-func (m Model) View() string {
-	var body string
-	switch m.screen {
-	case screenLoading, screenList:
-		body = m.renderList()
-	case screenPreview:
-		body = m.renderPreview()
-	case screenSettings:
-		body = renderSettings(m.th, m.settings, m.settingsCursor, m.contentW())
-	case screenMFA:
-		body = m.renderMFA()
-	case screenConfirm:
-		body = m.renderConfirm()
+func (m *Model) clampCursor() {
+	if m.cursor >= len(m.sessions) {
+		m.cursor = len(m.sessions) - 1
 	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+}
 
-	inner := strings.Join([]string{m.renderHeader(), m.renderStats(), body, m.renderFooter()}, "\n")
-	frame := m.th.panel(m.winW() - 2)
-	return frame.Render(inner)
+func (m *Model) clampPage() {
+	pages := m.pageCount()
+	switch {
+	case pages <= 1:
+		m.page = 0
+	case m.page >= pages:
+		m.page = pages - 1
+	case m.page < 0:
+		m.page = 0
+	}
+}
+
+func (m Model) pageCount() int {
+	n := len(m.sessions)
+	ps := m.pageSize()
+	if n == 0 || ps <= 0 {
+		return 1
+	}
+	p := n / ps
+	if n%ps != 0 {
+		p++
+	}
+	return max(1, p)
+}
+
+func (m Model) pageStart() int { return m.page * m.pageSize() }
+
+func (m Model) pageSize() int {
+	if m.pageSizeVal > 0 {
+		return m.pageSizeVal
+	}
+	return m.listRows()
 }

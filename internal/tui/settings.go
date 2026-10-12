@@ -20,18 +20,19 @@ type Settings struct {
 	DeviceSerial     string
 }
 
-// Validate returns an error if any field is missing or malformed.
+// Validate returns an error if any field is missing or malformed, with a
+// message a person can act on.
 func (s Settings) Validate() error {
 	switch {
-	case s.MywhooshEmail == "":
+	case strings.TrimSpace(s.MywhooshEmail) == "":
 		return fmt.Errorf("mywhoosh email is required")
-	case s.GarminEmail == "":
+	case strings.TrimSpace(s.GarminEmail) == "":
 		return fmt.Errorf("garmin email is required")
-	case s.DevicePreset == "":
-		return fmt.Errorf("device preset is required")
+	case strings.TrimSpace(s.DevicePreset) == "":
+		return fmt.Errorf("a device preset is required")
 	}
 	if _, err := device.Lookup(s.DevicePreset); err != nil {
-		return fmt.Errorf("device preset: %w", err)
+		return fmt.Errorf("unknown device preset %q — start typing to pick one from the list", s.DevicePreset)
 	}
 	if s.DeviceSerial != "" {
 		if _, err := s.serial(); err != nil {
@@ -43,15 +44,15 @@ func (s Settings) Validate() error {
 
 // serial parses DeviceSerial as a non-zero uint32.
 func (s Settings) serial() (uint32, error) {
-	n, err := strconv.ParseUint(s.DeviceSerial, 10, 32)
+	n, err := strconv.ParseUint(strings.TrimSpace(s.DeviceSerial), 10, 32)
 	if err != nil || n == 0 {
-		return 0, fmt.Errorf("device serial must be a non-zero uint32")
+		return 0, fmt.Errorf("device serial must be a whole number from 1 to 4294967295")
 	}
 	return uint32(n), nil
 }
 
 // HasSerial reports whether the user supplied a serial override.
-func (s Settings) HasSerial() bool { return s.DeviceSerial != "" }
+func (s Settings) HasSerial() bool { return strings.TrimSpace(s.DeviceSerial) != "" }
 
 // SerialValue returns the parsed override, or 0 when none is set.
 func (s Settings) SerialValue() uint32 {
@@ -62,110 +63,122 @@ func (s Settings) SerialValue() uint32 {
 	return n
 }
 
-// setField updates field i with a value during settings editing.
+// errorField returns the index of the first field that fails validation, or -1
+// when the settings are valid.
+func (s Settings) errorField() int {
+	for i := range settingsFields {
+		if fieldError(s, i) != "" {
+			return i
+		}
+	}
+	return -1
+}
+
+// fieldKind drives input behaviour and the autocomplete for each form field.
+type fieldKind int
+
+const (
+	fieldText fieldKind = iota
+	fieldSecret
+	fieldPreset
+	fieldSerial
+)
+
+// field indices, matching settingsFields order.
+const (
+	fldMywhooshEmail = iota
+	fldMywhooshPassword
+	fldGarminEmail
+	fldGarminPassword
+	fldDevicePreset
+	fldDeviceName
+	fldDeviceSerial
+)
+
+// fieldSpec describes one settings form field.
+type fieldSpec struct {
+	label       string
+	placeholder string
+	kind        fieldKind
+	maxLen      int
+}
+
+// settingsFields mirror the input order in the settings screen.
+var settingsFields = []fieldSpec{
+	{label: "MyWhoosh email", placeholder: "you@example.com", kind: fieldText, maxLen: 254},
+	{label: "MyWhoosh password", placeholder: "hunter2", kind: fieldSecret, maxLen: 256},
+	{label: "Garmin email", placeholder: "you@example.com", kind: fieldText, maxLen: 254},
+	{label: "Garmin password", placeholder: "hunter2", kind: fieldSecret, maxLen: 256},
+	{label: "Device preset", placeholder: "edge_540", kind: fieldPreset, maxLen: 40},
+	{label: "Device name", placeholder: "(preset default)", kind: fieldText, maxLen: 64},
+	{label: "Device serial", placeholder: "(auto-generate)", kind: fieldSerial, maxLen: 10},
+}
+
+// setField updates field i with a value.
 func (s *Settings) setField(i int, v string) {
 	switch i {
-	case 0:
+	case fldMywhooshEmail:
 		s.MywhooshEmail = v
-	case 1:
+	case fldMywhooshPassword:
 		s.MywhooshPassword = v
-	case 2:
+	case fldGarminEmail:
 		s.GarminEmail = v
-	case 3:
+	case fldGarminPassword:
 		s.GarminPassword = v
-	case 4:
+	case fldDevicePreset:
 		s.DevicePreset = v
-	case 5:
+	case fldDeviceName:
 		s.DeviceName = v
-	case 6:
+	case fldDeviceSerial:
 		s.DeviceSerial = v
 	}
 }
 
-// settingsFields mirror the input order in the settings screen.
-var settingsFields = []struct {
-	label       string
-	masked      bool
-	placeholder string
-}{
-	{label: "MyWhoosh email", placeholder: "you@example.com"},
-	{label: "MyWhoosh password", masked: true, placeholder: "hunter2"},
-	{label: "Garmin email", placeholder: "you@example.com"},
-	{label: "Garmin password", masked: true, placeholder: "hunter2"},
-	{label: "Device preset", placeholder: "edge_540"},
-	{label: "Device name", placeholder: "(preset default)"},
-	{label: "Device serial", placeholder: "(keep current)"},
-}
-
 func fieldValue(s Settings, i int) string {
 	switch i {
-	case 0:
+	case fldMywhooshEmail:
 		return s.MywhooshEmail
-	case 1:
+	case fldMywhooshPassword:
 		return s.MywhooshPassword
-	case 2:
+	case fldGarminEmail:
 		return s.GarminEmail
-	case 3:
+	case fldGarminPassword:
 		return s.GarminPassword
-	case 4:
+	case fldDevicePreset:
 		return s.DevicePreset
-	case 5:
+	case fldDeviceName:
 		return s.DeviceName
-	case 6:
+	case fldDeviceSerial:
 		return s.DeviceSerial
 	}
 	return ""
 }
 
-// fieldError reports the inline validation error for one field, if any.
+// fieldError reports the inline validation hint for one field, if any. Messages
+// are written for people, not parsers.
 func fieldError(s Settings, i int) string {
 	switch i {
-	case 0:
-		if s.MywhooshEmail == "" {
+	case fldMywhooshEmail:
+		if strings.TrimSpace(s.MywhooshEmail) == "" {
 			return "required"
 		}
-	case 2:
-		if s.GarminEmail == "" {
+	case fldGarminEmail:
+		if strings.TrimSpace(s.GarminEmail) == "" {
 			return "required"
 		}
-	case 4:
-		if s.DevicePreset == "" {
+	case fldDevicePreset:
+		if strings.TrimSpace(s.DevicePreset) == "" {
 			return "required"
 		}
 		if _, err := device.Lookup(s.DevicePreset); err != nil {
-			return "unknown preset (e.g. edge_540, edge_1030)"
+			return "unknown preset — start typing to pick from the list"
 		}
-	case 6:
-		if s.DeviceSerial != "" {
+	case fldDeviceSerial:
+		if strings.TrimSpace(s.DeviceSerial) != "" {
 			if _, err := s.serial(); err != nil {
-				return "must be a non-zero uint32"
+				return "must be a whole number from 1 to 4294967295"
 			}
 		}
 	}
 	return ""
-}
-
-func renderSettings(th theme, s Settings, cursor int, width int) string {
-	var b strings.Builder
-	for i, f := range settingsFields {
-		label := th.paint(f.label, th.text)
-		if i == cursor {
-			label = th.bold(f.label, th.accent)
-		}
-		value := fieldValue(s, i)
-		if f.masked && value != "" {
-			value = strings.Repeat("•", len(value))
-		}
-		if value == "" {
-			value = th.paint(f.placeholder, th.muted)
-		}
-		fmt.Fprintf(&b, "  %s: %s", label, value)
-		if err := fieldError(s, i); err != "" {
-			fmt.Fprintf(&b, "  %s", th.paint("← "+err, th.danger))
-		}
-		b.WriteString("\n")
-	}
-	b.WriteString("\n")
-	b.WriteString(th.paint("  save: ctrl+s  next: tab/↓  cancel: esc", th.muted))
-	return th.panel(width).Render(strings.TrimSuffix(b.String(), "\n"))
 }
