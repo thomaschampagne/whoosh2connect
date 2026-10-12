@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +32,15 @@ func main() {
 // write renders to w, ignoring write errors (best-effort terminal output).
 func write(w io.Writer, format string, a ...interface{}) {
 	_, _ = fmt.Fprintf(w, format, a...)
+}
+
+// serialText renders device serial text for the settings screen, leaving zero
+// blank so the screen shows the "keep current" placeholder.
+func serialText(n uint32) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.FormatUint(uint64(n), 10)
 }
 
 func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
@@ -116,11 +126,17 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 				GarminEmail:      cfg.Garmin.Email,
 				GarminPassword:   os.Getenv("WHOOSH2CONNECT_GARMIN_PASSWORD"),
 				DevicePreset:     cfg.Device.Preset,
+				DeviceName:       cfg.Device.Name,
+				DeviceSerial:     serialText(cfg.Device.Serial),
 			},
 			SaveSettings: func(s tui.Settings) error {
 				cfg.MyWhoosh.Email = s.MywhooshEmail
 				cfg.Garmin.Email = s.GarminEmail
 				cfg.Device.Preset = s.DevicePreset
+				cfg.Device.Name = s.DeviceName
+				if s.HasSerial() {
+					cfg.Device.Serial = s.SerialValue()
+				}
 				return config.Save(paths.ConfigFile, cfg)
 			},
 		}),

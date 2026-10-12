@@ -44,7 +44,11 @@ func resultColor(th theme, res app.UploadResult) lipgloss.Color {
 }
 
 func (m Model) renderDevice() string {
-	return m.th.paint("device: "+m.settings.DevicePreset, m.th.muted)
+	name := m.settings.DevicePreset
+	if m.settings.DeviceName != "" {
+		name += " (" + m.settings.DeviceName + ")"
+	}
+	return m.th.paint("device: "+name, m.th.muted)
 }
 
 func (m Model) renderList() string {
