@@ -3,8 +3,8 @@ set shell := ["bash", "-cu"]
 binary := "whoosh2connect"
 pkg := "./..."
 
-version := if "{{shell('git describe --tags --always --dirty 2>/dev/null || echo dev')}}" == "" { "dev" } else { "{{shell('git describe --tags --always --dirty 2>/dev/null || echo dev')}}" }
-commit := "{{shell('git rev-parse --short HEAD 2>/dev/null || echo none')}}"
+version := `git describe --tags --always --dirty 2>/dev/null || echo dev`
+commit := `git rev-parse --short HEAD 2>/dev/null || echo none`
 ldflags := "-s -w -X whoosh2connect/internal/version.Version=" + version + " -X whoosh2connect/internal/version.Commit=" + commit
 
 # build the binary into bin/whoosh2connect
