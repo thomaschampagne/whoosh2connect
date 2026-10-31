@@ -55,6 +55,9 @@ func (a *Activity) ParsedStart() time.Time {
 			return t
 		}
 	}
+	if a.Date == 0 {
+		return time.Time{}
+	}
 	return time.Unix(int64(a.Date), 0)
 }
 

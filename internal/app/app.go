@@ -349,8 +349,11 @@ func (s *Service) markUploaded(id, hash string, start time.Time, stats fit.Stats
 // uploaded) or the check failed (the ride is never uploaded unverified). A zero
 // start time disables the check.
 func (s *Service) checkRemote(ctx context.Context, id string, start time.Time) (UploadResult, bool) {
-	if s.Remote == nil || start.IsZero() {
+	if s.Remote == nil {
 		return UploadResult{}, false
+	}
+	if start.IsZero() {
+		return UploadResult{Status: StatusFailed, Err: errors.New("no start time, cannot check Garmin for duplicates")}, true
 	}
 	gid, found, err := s.Remote.FindMatch(ctx, start)
 	if err != nil {

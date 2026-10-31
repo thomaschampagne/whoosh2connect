@@ -201,3 +201,16 @@ func TestSync50NoGoroutineLeak(t *testing.T) {
 func testDeviceValue() device.Device {
 	return device.Device{Preset: device.Presets()[0], Serial: 1234}
 }
+
+func TestUploadWithoutStartTimeFailsClosed(t *testing.T) {
+	g := &fakeGarmin{}
+	svc := newService(t, &fakeMyWhoosh{fits: map[string][]byte{"f-a1": fixture()}}, g)
+	svc.Remote = &fakeRemote{}
+	res := svc.Upload(context.Background(), mywhoosh.Activity{ID: "a1", ActivityFileID: "f-a1"})
+	if res.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed (remote check impossible)", res.Status)
+	}
+	if g.uploads != 0 {
+		t.Fatalf("uploads = %d, want 0", g.uploads)
+	}
+}

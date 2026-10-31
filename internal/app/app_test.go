@@ -119,7 +119,7 @@ func newService(t *testing.T, mw *fakeMyWhoosh, g *fakeGarmin) *Service {
 }
 
 func activity() mywhoosh.Activity {
-	return mywhoosh.Activity{ID: "act-1", ActivityFileID: "file-1", Name: "Indoor Ride"}
+	return mywhoosh.Activity{ID: "act-1", ActivityFileID: "file-1", Name: "Indoor Ride", StartDatetime: "2026-01-08T14:10:00.000Z"}
 }
 
 func TestSessionsAnnotated(t *testing.T) {
@@ -409,7 +409,7 @@ func TestUploadRemoteGuard(t *testing.T) {
 			if tt.remote != nil {
 				svc.Remote = tt.remote
 			}
-			res := svc.Upload(context.Background(), mywhoosh.Activity{ID: "a1", ActivityFileID: "f-a1"})
+			res := svc.Upload(context.Background(), mywhoosh.Activity{ID: "a1", ActivityFileID: "f-a1", StartDatetime: "2026-01-08T14:10:00.000Z"})
 			if res.Status != tt.wantStatus || res.Reason != tt.wantReason {
 				t.Errorf("got %q/%q, want %q/%q (err %v)", res.Status, res.Reason, tt.wantStatus, tt.wantReason, res.Err)
 			}
