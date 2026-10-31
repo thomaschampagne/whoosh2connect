@@ -58,3 +58,22 @@ func TestLogFileMode0600(t *testing.T) {
 		t.Errorf("perm = %o, want 600", perm)
 	}
 }
+
+func TestOpenTruncatesPreviousRun(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app.log")
+	for _, msg := range []string{"first run", "second run"} {
+		log, closer, err := Open(path, slog.LevelInfo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		log.Info(msg)
+		_ = closer.Close()
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "first run") {
+		t.Fatalf("previous run not overwritten: %s", data)
+	}
+}

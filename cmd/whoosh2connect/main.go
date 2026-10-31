@@ -117,7 +117,12 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 		return 1
 	}
 
-	logger, logCloser, err := logx.Open(filepath.Join(paths.DataDir, "whoosh2connect.log"), slog.LevelInfo)
+	logPath, err := logFilePath()
+	if err != nil {
+		write(stderr, "log: %v\n", err)
+		return 1
+	}
+	logger, logCloser, err := logx.Open(logPath, slog.LevelInfo)
 	if err != nil {
 		write(stderr, "log: %v\n", err)
 		return 1
@@ -406,4 +411,16 @@ func verifyLedger(cfg config.Config, svc *app.Service, stdin *os.File, stdout, s
 	}
 	write(stdout, "ledger matches Garmin Connect\n")
 	return 0
+}
+
+// logFilePath returns whoosh2connect.log next to the running executable.
+func logFilePath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("locate executable: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return filepath.Join(filepath.Dir(exe), "whoosh2connect.log"), nil
 }

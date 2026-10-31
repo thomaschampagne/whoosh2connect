@@ -14,13 +14,14 @@ import (
 
 const redacted = "[redacted]"
 
-// Open appends JSON log lines to path, creating the file with mode 0600 and
-// its directory with mode 0700. The returned closer must be called on exit.
+// Open creates or truncates path, so each run starts with a fresh log. It is
+// created with mode 0600, and its directory with mode 0700. The returned closer
+// must be called on exit.
 func Open(path string, level slog.Level) (*slog.Logger, io.Closer, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, nil, fmt.Errorf("create log dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open log %s: %w", path, err)
 	}

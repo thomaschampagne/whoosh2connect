@@ -107,7 +107,7 @@ Date: 2026-10-31. Scope: all Go packages, read in full for `internal/app`, `inte
 | S2 | FIXED | Token files written atomically (`fsutil.WriteFileAtomic`). |
 | S3 | FIXED | JSON built with `json.Marshal`. |
 | S4 | FIXED | MyWhoosh login error no longer echoes the body. Other error snippets capped at 120 bytes. |
-| S5 | FIXED | `slog` JSON log at `whoosh2connect.log`, mode 0600, keys containing password, token, secret, mfa, code, authorization, cookie redacted. |
+| S5 | FIXED | `slog` JSON log at `whoosh2connect.log` next to the executable, overwritten each run, mode 0600, keys containing password, token, secret, mfa, code, authorization, cookie redacted. |
 | S6 | OK | No `InsecureSkipVerify`. |
 | S7 | OK | Activity IDs never become file names. |
 | S8 | FIXED | Config save is atomic. |
