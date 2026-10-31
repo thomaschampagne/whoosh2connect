@@ -7,9 +7,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"whoosh2connect/internal/config"
 	"whoosh2connect/internal/device"
 	"whoosh2connect/internal/garmin"
+	"whoosh2connect/internal/logx"
 	"whoosh2connect/internal/mywhoosh"
 	"whoosh2connect/internal/state"
 	"whoosh2connect/internal/tui"
@@ -56,6 +59,7 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 	deviceSerial := conf.Uint("device-serial", 0, "override device serial (non-zero uint32)")
 	noTUI := conf.Bool("no-tui", false, "sync headless and exit")
 	dryRun := conf.Bool("dry-run", false, "headless: print what would upload or skip, change nothing")
+	verify := conf.Bool("verify", false, "check ledger entries against Garmin Connect, upload nothing")
 	showVersion := conf.Bool("version", false, "print version and exit")
 	watchDir := conf.String("watch", "", `watch local MyWhoosh dir for new rides and auto-upload; "auto" discovers it`)
 	watchInterval := conf.Int("watch-interval", 10, "seconds between scans in watch mode")
@@ -113,7 +117,14 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 		return 1
 	}
 
-	svc, err := buildService(paths, dev)
+	logger, logCloser, err := logx.Open(filepath.Join(paths.DataDir, "whoosh2connect.log"), slog.LevelInfo)
+	if err != nil {
+		write(stderr, "log: %v\n", err)
+		return 1
+	}
+	defer func() { _ = logCloser.Close() }()
+
+	svc, err := buildService(paths, dev, logger)
 	if err != nil {
 		write(stderr, "state: %v\n", err)
 		return 1
@@ -146,12 +157,19 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 		return watchLoop(w, svc, cfg, stdin, stdout, stderr)
 	}
 
+	if *verify {
+		return verifyLedger(cfg, svc, stdin, stdout, stderr)
+	}
+
 	if *noTUI {
 		return headless(cfg, svc, *dryRun, stdin, stdout, stderr)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	p := tea.NewProgram(
 		tui.New(tui.Options{
+			Context: ctx,
 			Service: svc,
 			Settings: tui.Settings{
 				MywhooshEmail:    cfg.MyWhoosh.Email,
@@ -208,7 +226,7 @@ func resolveDevice(cfg config.Config, paths config.Paths) (device.Device, error)
 	return dev, nil
 }
 
-func buildService(paths config.Paths, dev device.Device) (*app.Service, error) {
+func buildService(paths config.Paths, dev device.Device, log *slog.Logger) (*app.Service, error) {
 	httpClient := &http.Client{Timeout: 60 * time.Second}
 	mwc := mywhoosh.New(mywhoosh.Options{
 		TokenFile:  paths.TokenDir + "/mywhoosh_token.json",
@@ -223,7 +241,7 @@ func buildService(paths config.Paths, dev device.Device) (*app.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := app.New(mwc, gc, store, dev)
+	s := app.New(mwc, gc, store, dev, log)
 	s.Remote = gc
 	return s, nil
 }
@@ -361,4 +379,31 @@ func statusWord(res app.UploadResult) string {
 	default:
 		return "failed  "
 	}
+}
+
+// verifyLedger cross-checks uploaded ledger entries against Garmin Connect and
+// prints each mismatch. It returns 1 when any mismatch is found.
+func verifyLedger(cfg config.Config, svc *app.Service, stdin *os.File, stdout, stderr *os.File) int {
+	if cfg.Garmin.Email == "" {
+		write(stderr, "verify needs --garmin-email\n")
+		return 1
+	}
+	ctx := context.Background()
+	if err := loginGarmin(ctx, svc, cfg.Garmin.Email, os.Getenv("WHOOSH2CONNECT_GARMIN_PASSWORD"), stdin, stderr); err != nil {
+		write(stderr, "garmin: %v\n", err)
+		return 1
+	}
+	findings, err := svc.Verify(ctx)
+	for _, f := range findings {
+		write(stdout, "mismatch %s: %s\n", f.ID, f.Detail)
+	}
+	if err != nil {
+		write(stderr, "verify: %v\n", err)
+		return 1
+	}
+	if len(findings) > 0 {
+		return 1
+	}
+	write(stdout, "ledger matches Garmin Connect\n")
+	return 0
 }

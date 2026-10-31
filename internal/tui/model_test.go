@@ -273,3 +273,12 @@ func TestPendingCount(t *testing.T) {
 		t.Fatalf("pending = %d", n)
 	}
 }
+
+func (f *fakeService) UploadPending(ctx context.Context, sessions []app.Session, report func(mywhoosh.Activity, app.UploadResult)) {
+	for _, s := range sessions {
+		if s.Uploaded {
+			continue
+		}
+		report(s.Activity, f.Upload(ctx, s.Activity))
+	}
+}

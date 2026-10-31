@@ -23,6 +23,7 @@ type Service interface {
 	SubmitMFA(ctx context.Context, code string) error
 	Sessions(ctx context.Context) ([]app.Session, error)
 	Upload(ctx context.Context, act mywhoosh.Activity) app.UploadResult
+	UploadPending(ctx context.Context, sessions []app.Session, report func(mywhoosh.Activity, app.UploadResult))
 }
 
 type screen int
@@ -42,11 +43,13 @@ type Options struct {
 	Settings     Settings
 	SaveSettings func(Settings) error
 	Dark         bool
+	Context      context.Context
 }
 
 // Model is the Bubble Tea state machine.
 type Model struct {
 	svc      Service
+	ctx      context.Context
 	settings Settings
 	saveFn   func(Settings) error
 	th       theme
@@ -83,11 +86,15 @@ func New(opts Options) Model {
 	}
 	m := Model{
 		svc:      opts.Service,
+		ctx:      opts.Context,
 		settings: opts.Settings,
 		saveFn:   func(Settings) error { return nil },
 		th:       th,
 		results:  make(map[string]string),
 		screen:   screenLoading,
+	}
+	if opts.Context == nil {
+		m.ctx = context.Background()
 	}
 	if opts.SaveSettings != nil {
 		m.saveFn = opts.SaveSettings
@@ -134,7 +141,7 @@ func (m *Model) logf(level logLevel, format string, a ...interface{}) {
 
 func (m Model) bootstrapCmd() tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx := m.ctx
 		if err := m.svc.LoginMyWhoosh(ctx, m.settings.MywhooshEmail, m.settings.MywhooshPassword); err != nil {
 			return bootstrapMsg{err: fmt.Errorf("mywhoosh login: %w", err)}
 		}
@@ -151,21 +158,21 @@ func (m Model) bootstrapCmd() tea.Cmd {
 
 func (m Model) refreshCmd() tea.Cmd {
 	return func() tea.Msg {
-		sessions, err := m.svc.Sessions(context.Background())
+		sessions, err := m.svc.Sessions(m.ctx)
 		return sessionsMsg{sessions: sessions, err: err}
 	}
 }
 
 func (m Model) uploadCmd(act mywhoosh.Activity) tea.Cmd {
 	return func() tea.Msg {
-		res := m.svc.Upload(context.Background(), act)
+		res := m.svc.Upload(m.ctx, act)
 		return uploadMsg{id: act.ID, res: res}
 	}
 }
 
 func (m Model) mfaCmd(code string) tea.Cmd {
 	return func() tea.Msg {
-		return mfaMsg{err: m.svc.SubmitMFA(context.Background(), code)}
+		return mfaMsg{err: m.svc.SubmitMFA(m.ctx, code)}
 	}
 }
 
@@ -577,18 +584,12 @@ func (m *Model) startUpload(s *app.Session) tea.Cmd {
 }
 
 func (m Model) uploadAllCmd() tea.Cmd {
-	acts := make([]mywhoosh.Activity, 0, len(m.sessions))
-	for _, s := range m.sessions {
-		if !s.Uploaded {
-			acts = append(acts, s.Activity)
-		}
-	}
-	n := len(acts)
+	sessions := append([]app.Session(nil), m.sessions...)
 	return func() tea.Msg {
 		var last app.UploadResult
-		for i := 0; i < n; i++ {
-			last = m.svc.Upload(context.Background(), acts[i])
-		}
+		m.svc.UploadPending(m.ctx, sessions, func(_ mywhoosh.Activity, res app.UploadResult) {
+			last = res
+		})
 		return uploadMsg{id: "batch", res: last}
 	}
 }
