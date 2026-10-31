@@ -222,7 +222,9 @@ func buildService(paths config.Paths, dev device.Device) (*app.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return app.New(mwc, gc, store, dev), nil
+	s := app.New(mwc, gc, store, dev)
+	s.Remote = gc
+	return s, nil
 }
 
 // headless performs one full sync without the TUI.
