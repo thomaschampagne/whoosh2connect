@@ -53,7 +53,7 @@ Date: 2026-10-31. Scope: all Go packages, read in full for `internal/app`, `inte
 
 | # | Item | Status | Fix |
 |---|------|--------|-----|
-| A1 | Upload orchestration duplicated: headless loop in `cmd/main.go`, upload-all loop in `internal/tui/model.go` (line 590), watch loop in `main.go`. Each decides its own status text. | OPEN | Move the loop into `app` (one `SyncOne`/`SyncAll` API). TUI and CLI only render results. |
+| A1 | Upload orchestration duplicated: headless loop in `cmd/main.go`, upload-all loop in `internal/tui/model.go` (line 590), watch loop in `main.go`. Each decides its own status text. | OPEN | PARTIAL: watch loop now in `app.Watch`, shared by CLI and TUI. Headless and upload-all loops still duplicate. |
 | A2 | Logic in TUI: upload-all sequencing and confirm counting live in `tui/model.go`. | OPEN | Move sequencing to `app`. |
 | A3 | `app.Service` holds `*state.Store` (concrete type). Tests need a real file. | FIXED in part | `Service` still takes `*state.Store`. Next: define a `Ledger` interface on the consumer side. |
 | A4 | `garmin.Options.Hosts` is a test hook inside production options. Test code reaches into `hosts` through the same struct. | OPEN, low | Keep unexported. Tests in the same package already use it. Acceptable. |

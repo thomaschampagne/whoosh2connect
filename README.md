@@ -69,6 +69,23 @@ whoosh2connect --no-tui \
   --garmin-email you@example.com
 ```
 
+### Auto-watch
+
+Press `t` in the TUI to turn auto-watch on. While it is on, the app scans the
+MyWhoosh ride folder every 10 seconds. When a ride file stops changing, the app
+fixes, spoofs, and uploads it to Garmin Connect, then shows a system
+notification. A failed upload is retried on a later scan. Press `t` again to
+turn it off. The setting is saved, and watching restarts when you open the TUI.
+
+Watching runs only while whoosh2connect is open. There is no background service.
+The folder is found automatically, or set it with `watch.dir` in the config file.
+
+The same loop runs headless:
+
+```sh
+whoosh2connect --watch auto --garmin-email you@example.com
+```
+
 ### Dry-run and verify
 
 Preview what a headless sync would do, without downloading or uploading:
@@ -133,6 +150,9 @@ device:
   preset: edge_540
   name: "" # optional override
   serial: 0 # 0 means "generate once and persist"
+watch:
+  enabled: false # set by the TUI auto-watch toggle
+  dir: "" # empty means the platform default MyWhoosh folder
 ```
 
 Environment variables:

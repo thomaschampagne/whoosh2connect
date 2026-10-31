@@ -23,6 +23,7 @@ internal/fsutil/      atomic 0600 file writes
 internal/httpx/       bounded response reads, short error snippets
 internal/logx/        slog file logger with secret redaction
 internal/watch/       local FIT directory watcher (hash cache, stable scans)
+internal/notify/      system notifications behind a small interface
 internal/app/         upload pipeline shared by API and watch paths; ledger guards; verify
 internal/garmin/      also: activity list for remote match (activities.go)
 internal/tui/         Bubble Tea model, views, settings, MFA screen
