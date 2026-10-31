@@ -43,7 +43,7 @@ Date: 2026-10-31. Scope: all Go packages, read in full for `internal/app`, `inte
 | S3 | `DownloadFit` built JSON with `fmt.Sprintf` (injection). | FIXED | `json.Marshal` plus a test with quotes in the ID. |
 | S4 | Error messages include up to 300 bytes of HTTP response body (`truncate`). A login error body could echo account data. | OPEN | Redact known fields, or log only status code and the first 80 characters. |
 | S5 | No structured logging. Errors go to stderr via `fmt`. No file log under the data dir. Redaction does not exist. | OPEN | Add `log/slog` with a file handler under the XDG data dir and a redacting handler for tokens and passwords. |
-| S6 | `InsecureSkipVerify` | VERIFY | Grep the tree. None seen in the files read. |
+| S6 | `InsecureSkipVerify` | OK | Grep of the whole tree: no match. |
 | S7 | Path handling: watch directory is user-supplied and globbed. Activity IDs are never used as file names. Temp names are generated. | OK | Keep. Validate that the watch glob stays inside the directory (no `..`). |
 | S8 | File permissions: state and config written 0600, directories 0700. | OK | State is now atomic. Config save is not atomic (`os.WriteFile`). Make it atomic too. |
 | S9 | Credentials: passwords read from env in headless mode (`WHOOSH2CONNECT_*_PASSWORD`). Environment variables are visible to same-user processes. | Accepted | Document in README. Prefer interactive prompt. |

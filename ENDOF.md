@@ -10,7 +10,7 @@ Last checkpoint: 2026-10-31. Read this first, then `docs/superpowers/specs/2026-
   - Done: Garmin remote checker `garmin.Client.FindMatch` (activities list endpoint verified in garth cassettes, ±2 min start window, max 5 pages x 20). Wired in `buildService`.
   - Done: `--dry-run` (headless) prints would-upload or would-skip with reason (ledger id, remote match). Hash check cannot run before download, so planned uploads may still skip at run time.
   - Not done: verify command. Watch mode has no remote check (needs FIT session start time). Remote match on start time only; duration and distance not compared yet. Rides older than 100 most recent are not checked remotely (ledger covers them).
-- Goal 2, quality. Partial. Done: DownloadFit JSON injection fixed (json.Marshal). Missing: `docs/audit.md`, watch `seen` map growth, goroutine/leak check, README, AGENTS.md update.
+- Goal 2, quality. Partial. Done: `docs/audit.md` written (D1-D7, G1-G5, U1-U5, S1-S10, A1-A8). DownloadFit JSON injection fixed. Missing: `docs/audit.md`, watch `seen` map growth, goroutine/leak check, README, AGENTS.md update.
 
 ## Commands
 
