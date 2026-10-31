@@ -86,3 +86,30 @@ func TestUnknownFlag(t *testing.T) {
 		t.Fatalf("code=%d", code)
 	}
 }
+
+func TestResolveWatchDir(t *testing.T) {
+	existing := t.TempDir()
+	tests := []struct {
+		name    string
+		flag    string
+		cfgDir  string
+		want    string
+		wantErr bool
+	}{
+		{name: "flag wins over config", flag: existing, cfgDir: filepath.Join(t.TempDir(), "gone"), want: existing},
+		{name: "config dir used without flag", cfgDir: existing, want: existing},
+		{name: "missing flag dir errors", flag: filepath.Join(t.TempDir(), "gone"), wantErr: true},
+		{name: "missing config dir errors", cfgDir: filepath.Join(t.TempDir(), "gone"), wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveWatchDir(tc.flag, tc.cfgDir)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("dir = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

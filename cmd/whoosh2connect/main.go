@@ -26,6 +26,7 @@ import (
 	"whoosh2connect/internal/garmin"
 	"whoosh2connect/internal/logx"
 	"whoosh2connect/internal/mywhoosh"
+	"whoosh2connect/internal/notify"
 	"whoosh2connect/internal/state"
 	"whoosh2connect/internal/tui"
 	"whoosh2connect/internal/version"
@@ -138,18 +139,9 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 	}
 
 	if *watchDir != "" {
-		dir := *watchDir
-		if dir == "auto" {
-			d, err := watch.DefaultDir()
-			if err != nil {
-				write(stderr, "watch: %v\n", err)
-				return 1
-			}
-			dir = d
-		}
-		st, err := os.Stat(dir)
-		if err != nil || !st.IsDir() {
-			write(stderr, "watch: %s is not a directory\n", dir)
+		dir, err := resolveWatchDir(*watchDir, cfg.Watch.Dir)
+		if err != nil {
+			write(stderr, "watch: %v\n", err)
 			return 1
 		}
 		w, err := watch.New(watch.Options{
@@ -203,6 +195,17 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 					cfg.Device.Serial = s.SerialValue()
 				}
 				return config.Save(paths.ConfigFile, cfg)
+			},
+			Watch: tui.WatchOptions{
+				Enabled:    cfg.Watch.Enabled,
+				Dir:        cfg.Watch.Dir,
+				Interval:   watchPollInterval,
+				Notifier:   notify.System(),
+				NewScanner: newScanner,
+				Save: func(on bool) error {
+					cfg.Watch.Enabled = on
+					return config.Save(paths.ConfigFile, cfg)
+				},
 			},
 		}),
 		tea.WithAltScreen(),
@@ -344,9 +347,8 @@ func loginGarmin(ctx context.Context, svc *app.Service, email, password string, 
 	return nil
 }
 
-// watchLoop scans a local MyWhoosh FIT directory for finished rides, fixing,
-// spoofing, and uploading each one. Rides whose upload failed are retried on a
-// later scan; Ctrl-C exits.
+// watchLoop runs the shared watch pipeline in the foreground: each finished ride
+// is fixed, spoofed, and uploaded, and printed. Ctrl-C exits.
 func watchLoop(w *watch.Watcher, svc *app.Service, cfg config.Config, stdin *os.File, stdout, stderr *os.File) int {
 	if cfg.Garmin.Email == "" {
 		write(stderr, "watch mode needs --garmin-email\n")
@@ -361,25 +363,55 @@ func watchLoop(w *watch.Watcher, svc *app.Service, cfg config.Config, stdin *os.
 	}
 	write(stdout, "watching %s (every %s)\n", w.Dir(), w.Interval())
 
-	for {
-		rides, err := w.Scan()
-		if err != nil {
-			write(stderr, "watch: %v\n", err)
-			return 1
+	ch := make(chan app.WatchEvent)
+	go svc.Watch(ctx, w, w.Interval(), notify.System(), ch)
+	code := 0
+	for ev := range ch {
+		if ev.Err != nil {
+			write(stderr, "watch: %v\n", ev.Err)
+			code = 1
+			continue
 		}
-		for _, r := range rides {
-			res := svc.ProcessLocalFit(ctx, "local:"+r.Hash, r.Path)
-			write(stdout, "%s %s — %s\n", statusWord(res), r.File, res.DescribeUpload())
-			if res.Status == app.StatusFailed {
-				w.Forget(r.Hash)
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return 0
-		case <-time.After(w.Interval()):
-		}
+		write(stdout, "%s %s — %s\n", statusWord(ev.Result), ev.File, ev.Result.DescribeUpload())
 	}
+	return code
+}
+
+// watchPollInterval is how often the TUI's auto-watch scans the ride folder.
+const watchPollInterval = 10 * time.Second
+
+// resolveWatchDir picks the folder to watch: the flag, then the config value.
+// "auto", or no value at all, means the platform default.
+func resolveWatchDir(flag, cfgDir string) (string, error) {
+	dir := flag
+	if dir == "" {
+		dir = cfgDir
+	}
+	if dir == "" || dir == "auto" {
+		d, err := watch.DefaultDir()
+		if err != nil {
+			return "", err
+		}
+		dir = d
+	}
+	st, err := os.Stat(dir)
+	if err != nil || !st.IsDir() {
+		return "", fmt.Errorf("%s is not a directory", dir)
+	}
+	return dir, nil
+}
+
+// newScanner builds the folder scanner used by the TUI's auto-watch.
+func newScanner(dir string) (app.RideScanner, error) {
+	d, err := resolveWatchDir("", dir)
+	if err != nil {
+		return nil, err
+	}
+	w, err := watch.New(watch.Options{Dir: d, Interval: watchPollInterval, StableScans: 2})
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 func statusWord(res app.UploadResult) string {
