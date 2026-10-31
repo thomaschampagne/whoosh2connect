@@ -79,12 +79,14 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("parse state %s: %w", path, err)
 		}
 		s.setEntries(entries)
-		if legacy {
-			if err := s.persistLocked(); err != nil {
-				return nil, err
+		if err := s.withLock(func() error {
+			if legacy {
+				if err := s.persistLocked(); err != nil {
+					return err
+				}
 			}
-		}
-		if err := s.withLock(s.resolveStale); err != nil {
+			return s.resolveStale()
+		}); err != nil {
 			return nil, err
 		}
 	case os.IsNotExist(err):
