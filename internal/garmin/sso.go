@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/dghubble/oauth1"
+
+	"whoosh2connect/internal/httpx"
 )
 
 // ErrMFARequired signals that login hit a two-factor challenge and the caller
@@ -238,12 +240,12 @@ func (f *ssoFlow) getOAuth1Token(ctx context.Context, ticket string) (*OAuth1Tok
 		return nil, fmt.Errorf("preauthorized request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+	body, err := httpx.ReadBody(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("preauthorized HTTP %d: %s", resp.StatusCode, truncate(body))
+		return nil, fmt.Errorf("preauthorized HTTP %d: %s", resp.StatusCode, httpx.Snippet(body))
 	}
 	values, err := url.ParseQuery(string(body))
 	if err != nil {
@@ -285,12 +287,12 @@ func (f *ssoFlow) exchangeOAuth2(ctx context.Context, oauth1Token *OAuth1Token) 
 		return nil, fmt.Errorf("exchange request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := httpx.ReadBody(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("oauth2 exchange HTTP %d: %s", resp.StatusCode, truncate(respBody))
+		return nil, fmt.Errorf("oauth2 exchange HTTP %d: %s", resp.StatusCode, httpx.Snippet(respBody))
 	}
 
 	var raw struct {
@@ -356,12 +358,12 @@ func (f *ssoFlow) do(ctx context.Context, req *http.Request, headers http.Header
 	}
 	defer func() { _ = resp.Body.Close() }()
 	f.lastURL = resp.Request.URL.String()
-	body, err := io.ReadAll(resp.Body)
+	body, err := httpx.ReadBody(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(body))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, httpx.Snippet(body))
 	}
 	return body, nil
 }

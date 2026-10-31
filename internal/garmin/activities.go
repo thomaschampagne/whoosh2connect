@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
+
+	"whoosh2connect/internal/httpx"
 )
 
 const (
@@ -83,12 +84,12 @@ func (c *Client) listActivities(ctx context.Context, start, limit int) ([]Recent
 		return nil, fmt.Errorf("activities request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	body, err := httpx.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read activities: %w", err)
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("list activities failed (HTTP %d): %s", resp.StatusCode, truncate(body))
+		return nil, fmt.Errorf("list activities failed (HTTP %d): %s", resp.StatusCode, httpx.Snippet(body))
 	}
 	return parseActivities(body)
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"whoosh2connect/internal/fsutil"
 )
 
 // cachedToken is the on-disk session format.
@@ -33,5 +35,5 @@ func writeTokenFile(path, access, whooshID string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	return fsutil.WriteFileAtomic(path, data, 0o600)
 }

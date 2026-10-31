@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+
+	"whoosh2connect/internal/fsutil"
 )
 
 // Status is the lifecycle state of one ride in the ledger.
@@ -229,32 +231,5 @@ func (s *Store) persistLocked() error {
 	if err != nil {
 		return fmt.Errorf("marshal state: %w", err)
 	}
-	return writeAtomic(s.path, data)
-}
-
-func writeAtomic(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".state-*.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp state: %w", err)
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("chmod temp state: %w", err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write temp state: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync temp state: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp state: %w", err)
-	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		return fmt.Errorf("replace state: %w", err)
-	}
-	return nil
+	return fsutil.WriteFileAtomic(s.path, data, 0o600)
 }

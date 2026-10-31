@@ -7,12 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+
+	"whoosh2connect/internal/httpx"
 )
 
 const (
@@ -139,12 +140,12 @@ func (c *Client) Login(ctx context.Context, email, password string) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := httpx.ReadBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("login failed (HTTP %d): %s", resp.StatusCode, truncate(respBody))
+		return fmt.Errorf("login failed (HTTP %d)", resp.StatusCode)
 	}
 
 	var result struct {
@@ -197,13 +198,13 @@ func (c *Client) ListActivities(ctx context.Context) ([]Activity, error) {
 		if err != nil {
 			return nil, fmt.Errorf("activities request: %w", err)
 		}
-		body, err := io.ReadAll(resp.Body)
+		body, err := httpx.ReadBody(resp.Body)
 		_ = resp.Body.Close()
 		if err != nil {
 			return nil, fmt.Errorf("read response: %w", err)
 		}
 		if resp.StatusCode >= 400 {
-			return nil, fmt.Errorf("fetch activities failed (HTTP %d): %s", resp.StatusCode, truncate(body))
+			return nil, fmt.Errorf("fetch activities failed (HTTP %d): %s", resp.StatusCode, httpx.Snippet(body))
 		}
 
 		var result struct {
@@ -251,12 +252,12 @@ func (c *Client) DownloadFit(ctx context.Context, fileID string) ([]byte, error)
 		return nil, fmt.Errorf("download request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+	body, err := httpx.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("download failed (HTTP %d): %s", resp.StatusCode, truncate(body))
+		return nil, fmt.Errorf("download failed (HTTP %d): %s", resp.StatusCode, httpx.Snippet(body))
 	}
 
 	var result struct {
@@ -278,7 +279,7 @@ func (c *Client) DownloadFit(ctx context.Context, fileID string) ([]byte, error)
 		return nil, fmt.Errorf("fetch FIT file: %w", err)
 	}
 	defer func() { _ = fitResp.Body.Close() }()
-	fitData, err := io.ReadAll(fitResp.Body)
+	fitData, err := httpx.ReadBody(fitResp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read FIT file: %w", err)
 	}
@@ -286,11 +287,4 @@ func (c *Client) DownloadFit(ctx context.Context, fileID string) ([]byte, error)
 		return nil, fmt.Errorf("FIT download failed (HTTP %d)", fitResp.StatusCode)
 	}
 	return fitData, nil
-}
-
-func truncate(b []byte) string {
-	if len(b) > 300 {
-		return string(b[:300])
-	}
-	return string(b)
 }

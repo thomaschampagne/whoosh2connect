@@ -10,6 +10,8 @@ import (
 	"strconv"
 
 	"gopkg.in/yaml.v3"
+
+	"whoosh2connect/internal/fsutil"
 )
 
 // AppName is the directory name used under the XDG config/data directories.
@@ -175,7 +177,7 @@ func Save(path string, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := fsutil.WriteFileAtomic(path, data, 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil

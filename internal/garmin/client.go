@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"whoosh2connect/internal/httpx"
 )
 
 const apiUserAgent = "GCM-iOS-5.19.1.2"
@@ -244,7 +246,7 @@ func (c *Client) doUpload(ctx context.Context, filePath string) (int, []byte, er
 		return 0, nil, fmt.Errorf("upload request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+	body, err := httpx.ReadBody(resp.Body)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -256,7 +258,7 @@ func parseUploadResult(status int, body []byte) error {
 		return ErrDuplicate
 	}
 	if status >= 400 {
-		return fmt.Errorf("upload failed (HTTP %d): %s", status, truncate(body))
+		return fmt.Errorf("upload failed (HTTP %d): %s", status, httpx.Snippet(body))
 	}
 	var result struct {
 		DetailedImportResult struct {

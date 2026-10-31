@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"whoosh2connect/internal/fsutil"
 )
 
 // OAuth1Token represents the OAuth1 credentials obtained from Garmin SSO.
@@ -82,7 +84,7 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	return fsutil.WriteFileAtomic(path, data, 0o600)
 }
 
 func readJSON(path string, v any) error {

@@ -146,6 +146,7 @@ func TestEnvConfigPathChoosesFile(t *testing.T) {
 }
 
 func TestInvalidEnvSerialIgnored(t *testing.T) {
+	isolateHome(t)
 	t.Setenv("WHOOSH2CONNECT_DEVICE_SERIAL", "not-a-number")
 	cfg, _, err := Load(Overrides{})
 	if err != nil {
@@ -154,4 +155,14 @@ func TestInvalidEnvSerialIgnored(t *testing.T) {
 	if cfg.Device.Serial != 0 {
 		t.Errorf("serial = %d, want 0 (invalid env ignored)", cfg.Device.Serial)
 	}
+}
+
+// isolateHome points config and data lookups at a temp dir so tests never read
+// the developer's real config file.
+func isolateHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 }
