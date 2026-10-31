@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -24,6 +25,7 @@ type Service interface {
 	Sessions(ctx context.Context) ([]app.Session, error)
 	Upload(ctx context.Context, act mywhoosh.Activity) app.UploadResult
 	UploadPending(ctx context.Context, sessions []app.Session, report func(mywhoosh.Activity, app.UploadResult))
+	SaveSpoofed(ctx context.Context, act mywhoosh.Activity, dir string) (string, error)
 }
 
 type screen int
@@ -44,6 +46,10 @@ type Options struct {
 	SaveSettings func(Settings) error
 	Dark         bool
 	Context      context.Context
+	// SpoofDir is where spoofed FIT files are saved on request.
+	SpoofDir string
+	// OpenDir opens a folder in the file manager.
+	OpenDir func(path string) error
 }
 
 // Model is the Bubble Tea state machine.
@@ -70,6 +76,8 @@ type Model struct {
 	showLog  bool
 	logs     logBuffer
 	mouseOn  bool
+	spoofDir string
+	openDir  func(string) error
 
 	width  int
 	height int
@@ -94,6 +102,8 @@ func New(opts Options) Model {
 		results:  make(map[string]string),
 		screen:   screenLoading,
 		mouseOn:  true,
+		spoofDir: opts.SpoofDir,
+		openDir:  opts.OpenDir,
 	}
 	if opts.Context == nil {
 		m.ctx = context.Background()
@@ -134,6 +144,12 @@ type uploadMsg struct {
 	res app.UploadResult
 }
 
+type spoofedMsg struct {
+	id   string
+	path string
+	err  error
+}
+
 type mfaMsg struct{ err error }
 
 // logf appends an entry to the in-model log panel.
@@ -172,9 +188,31 @@ func (m Model) uploadCmd(act mywhoosh.Activity) tea.Cmd {
 	}
 }
 
+func (m Model) saveSpoofedCmd(act mywhoosh.Activity) tea.Cmd {
+	return func() tea.Msg {
+		path, err := m.svc.SaveSpoofed(m.ctx, act, m.spoofDir)
+		return spoofedMsg{id: act.ID, path: path, err: err}
+	}
+}
+
 func (m Model) mfaCmd(code string) tea.Cmd {
 	return func() tea.Msg {
 		return mfaMsg{err: m.svc.SubmitMFA(m.ctx, code)}
+	}
+}
+
+// openSpoofDir opens the spoof folder in the file manager, creating it first.
+func (m *Model) openSpoofDir() {
+	if m.openDir == nil || m.spoofDir == "" {
+		m.logf(logError, "no spoof folder configured")
+		return
+	}
+	if err := os.MkdirAll(m.spoofDir, 0o700); err != nil {
+		m.logf(logError, "create spoof folder: %v", err)
+		return
+	}
+	if err := m.openDir(m.spoofDir); err != nil {
+		m.logf(logError, "open folder: %v", err)
 	}
 }
 
@@ -240,6 +278,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logf(logSuccess, "refreshed: %d session(s)", len(msg.sessions))
 		m.clampCursor()
 		m.clampPage()
+
+	case spoofedMsg:
+		if msg.err != nil {
+			m.status = m.th.paint("save failed: "+msg.err.Error(), m.th.danger)
+			m.logf(logError, "save spoofed %s: %v", msg.id, msg.err)
+		} else {
+			m.status = m.th.paint("saved "+msg.path, m.th.success)
+			m.logf(logInfo, "saved spoofed %s to %s", msg.id, msg.path)
+		}
 
 	case uploadMsg:
 		if m.uploading > 0 {
@@ -409,6 +456,13 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 		m.form.setWidth(m.innerW())
 		m.screen = screenSettings
 		cmds = append(cmds, m.form.focusField(0))
+	case "w":
+		if s := m.selected(); s != nil {
+			m.logf(logInfo, "saving spoofed FIT for %s", s.ID)
+			cmds = append(cmds, m.saveSpoofedCmd(s.Activity))
+		}
+	case "o":
+		m.openSpoofDir()
 	case "r":
 		m.logf(logInfo, "refreshing sessions…")
 		cmds = append(cmds, m.refreshCmd())

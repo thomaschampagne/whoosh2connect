@@ -296,3 +296,22 @@ func TestMouseToggleKey(t *testing.T) {
 		t.Fatalf("second m: mouseOn = %v, want on with an enable cmd", m.mouseOn)
 	}
 }
+
+func (f *fakeService) SaveSpoofed(ctx context.Context, act mywhoosh.Activity, dir string) (string, error) {
+	return dir + "/" + act.ID + ".fit", nil
+}
+
+func TestSpoofKeysSaveAndOpen(t *testing.T) {
+	var opened string
+	f := &fakeService{sessions: []app.Session{session("1")}}
+	m := New(Options{Service: f, SpoofDir: t.TempDir(), OpenDir: func(p string) error { opened = p; return nil }})
+	m.screen = screenList
+	m.sessions = f.sessions
+	if cmd := upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}}); cmd == nil {
+		t.Fatal("w should return a save command")
+	}
+	upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if opened != m.spoofDir {
+		t.Fatalf("opened %q, want %q", opened, m.spoofDir)
+	}
+}

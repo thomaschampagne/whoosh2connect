@@ -13,11 +13,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"whoosh2connect/internal/device"
 	"whoosh2connect/internal/fit"
+	"whoosh2connect/internal/fsutil"
 	"whoosh2connect/internal/garmin"
 	"whoosh2connect/internal/mywhoosh"
 	"whoosh2connect/internal/state"
@@ -173,10 +175,7 @@ func (s *Service) Sessions(ctx context.Context) ([]Session, error) {
 
 // Upload downloads, fixes, and uploads one MyWhoosh activity.
 func (s *Service) Upload(ctx context.Context, act mywhoosh.Activity) UploadResult {
-	fileID := act.ActivityFileID
-	if fileID == "" {
-		fileID = act.ID
-	}
+	fileID := fileIDOf(act)
 	return s.run(ctx, act.ID, act.ParsedStart(), func(ctx context.Context) ([]byte, error) {
 		data, err := s.MyWhoosh.DownloadFit(ctx, fileID)
 		if err != nil {
@@ -430,4 +429,52 @@ func (r UploadResult) DescribeUpload() string {
 		}
 		return "failed"
 	}
+}
+
+// SaveSpoofed downloads act, fixes and spoofs it like an upload would, and
+// writes the result to dir as <id>.fit with mode 0600. It touches neither the
+// ledger nor Garmin. Only call it on explicit user request.
+func (s *Service) SaveSpoofed(ctx context.Context, act mywhoosh.Activity, dir string) (string, error) {
+	name, err := safeFileStem(act.ID)
+	if err != nil {
+		return "", err
+	}
+	raw, err := s.MyWhoosh.DownloadFit(ctx, fileIDOf(act))
+	if err != nil {
+		return "", fmt.Errorf("download: %w", err)
+	}
+	var fixed bytes.Buffer
+	if _, err := fit.Fix(bytes.NewReader(raw), &fixed, s.Device); err != nil {
+		return "", fmt.Errorf("fix fit: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create %s: %w", dir, err)
+	}
+	path := filepath.Join(dir, name+".fit")
+	if err := fsutil.WriteFileAtomic(path, fixed.Bytes(), 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func fileIDOf(act mywhoosh.Activity) string {
+	if act.ActivityFileID != "" {
+		return act.ActivityFileID
+	}
+	return act.ID
+}
+
+// safeFileStem accepts only letters, digits, '-' and '_', so an ID from the
+// network can never name a path outside the target directory.
+func safeFileStem(id string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("empty activity id")
+	}
+	for _, r := range id {
+		ok := r == '-' || r == '_' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		if !ok {
+			return "", fmt.Errorf("unsafe activity id %q", id)
+		}
+	}
+	return id, nil
 }

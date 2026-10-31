@@ -375,6 +375,8 @@ func (m Model) helpLines() []string {
 		"  settings        s",
 		"  logs            l",
 		"  mouse on/off    m  (off: select and copy text)",
+		"  save spoofed    w",
+		"  open spoof dir  o",
 		"  help            ?",
 		"  quit            q  or  ctrl+c",
 		"",

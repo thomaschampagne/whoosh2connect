@@ -166,6 +166,7 @@ supported:
 | `…/state.json`                               | Sync ledger: ride IDs, FIT hashes, statuses (mode `0600`) |
 | `…/state.json.lock`                          | Lock file serialising ledger writes across processes |
 | `whoosh2connect.log` (next to the executable)  | Structured log, overwritten on each start, secrets redacted (mode `0600`) |
+| `spoofed/<id>.fit` (next to the executable)   | Spoofed FIT, saved only when you press `w` on a ride (mode `0600`). Open the folder with `o`. |
 
 - Passwords are never written to disk, never passed as flags, and never logged.
 - MFA codes are used once and discarded.

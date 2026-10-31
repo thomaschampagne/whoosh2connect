@@ -10,8 +10,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -170,12 +172,19 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 		return headless(cfg, svc, *dryRun, stdin, stdout, stderr)
 	}
 
+	spoofDir, err := spoofFolder()
+	if err != nil {
+		write(stderr, "spoof folder: %v\n", err)
+		return 1
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	p := tea.NewProgram(
 		tui.New(tui.Options{
-			Context: ctx,
-			Service: svc,
+			Context:  ctx,
+			Service:  svc,
+			SpoofDir: spoofDir,
+			OpenDir:  openFolder,
 			Settings: tui.Settings{
 				MywhooshEmail:    cfg.MyWhoosh.Email,
 				MywhooshPassword: os.Getenv("WHOOSH2CONNECT_MYWHOOSH_PASSWORD"),
@@ -415,6 +424,15 @@ func verifyLedger(cfg config.Config, svc *app.Service, stdin *os.File, stdout, s
 
 // logFilePath returns whoosh2connect.log next to the running executable.
 func logFilePath() (string, error) {
+	dir, err := exeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "whoosh2connect.log"), nil
+}
+
+// exeDir returns the directory of the running executable, with symlinks resolved.
+func exeDir() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", fmt.Errorf("locate executable: %w", err)
@@ -422,5 +440,28 @@ func logFilePath() (string, error) {
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
-	return filepath.Join(filepath.Dir(exe), "whoosh2connect.log"), nil
+	return filepath.Dir(exe), nil
+}
+
+// openFolder opens path in the platform file manager. It runs a fixed program
+// with the path as a plain argument, never through a shell.
+func openFolder(path string) error {
+	name, args := "xdg-open", []string{path}
+	switch runtime.GOOS {
+	case "windows":
+		name = "explorer"
+	case "darwin":
+		name = "open"
+	}
+	return exec.Command(name, args...).Start()
+}
+
+// spoofFolder is where spoofed FIT files are saved on request: spoofed/ next
+// to the executable.
+func spoofFolder() (string, error) {
+	dir, err := exeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "spoofed"), nil
 }

@@ -248,3 +248,35 @@ func TestFailureKeepsKnownHash(t *testing.T) {
 		t.Fatalf("hash = %q, want abc kept", e.Hash)
 	}
 }
+
+func TestSaveSpoofedWritesFileWithoutUploading(t *testing.T) {
+	g := &fakeGarmin{}
+	svc := newService(t, &fakeMyWhoosh{fits: map[string][]byte{"f-a1": fixture()}}, g)
+	dir := filepath.Join(t.TempDir(), "spoofed")
+	path, err := svc.SaveSpoofed(context.Background(), mywhoosh.Activity{ID: "a1", ActivityFileID: "f-a1"}, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("perm = %o, want 600", info.Mode().Perm())
+	}
+	if g.uploads != 0 {
+		t.Errorf("uploads = %d, want 0", g.uploads)
+	}
+	if _, ok := svc.Store.ByID("a1"); ok {
+		t.Error("save must not write the ledger")
+	}
+}
+
+func TestSaveSpoofedRejectsUnsafeID(t *testing.T) {
+	svc := newService(t, &fakeMyWhoosh{}, &fakeGarmin{})
+	for _, id := range []string{"", "../x", "a/b", "a b"} {
+		if _, err := svc.SaveSpoofed(context.Background(), mywhoosh.Activity{ID: id}, t.TempDir()); err == nil {
+			t.Errorf("id %q accepted", id)
+		}
+	}
+}
