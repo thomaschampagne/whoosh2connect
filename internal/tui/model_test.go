@@ -315,3 +315,15 @@ func TestSpoofKeysSaveAndOpen(t *testing.T) {
 		t.Fatalf("opened %q, want %q", opened, m.spoofDir)
 	}
 }
+
+func TestListFooterShowsNewShortcuts(t *testing.T) {
+	m := New(Options{Service: &fakeService{}})
+	m.screen = screenList
+	m.width, m.height = 160, 40
+	hint := m.renderHint()
+	for _, want := range []string{"w save FIT", "o spoof dir", "m mouse", "q quit"} {
+		if !strings.Contains(hint, want) {
+			t.Errorf("footer %q missing %q", hint, want)
+		}
+	}
+}

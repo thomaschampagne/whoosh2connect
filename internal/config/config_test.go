@@ -166,3 +166,24 @@ func isolateHome(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 }
+
+func TestDataHome(t *testing.T) {
+	home := filepath.Join("h", "user")
+	tests := []struct {
+		name, goos, xdg, localAppData, want string
+	}{
+		{"linux default", "linux", "", "", filepath.Join(home, ".local", "share")},
+		{"linux xdg wins", "linux", "/x", "", "/x"},
+		{"windows localappdata", "windows", "", filepath.Join("l", "app"), filepath.Join("l", "app")},
+		{"windows fallback", "windows", "", "", filepath.Join(home, "AppData", "Local")},
+		{"darwin", "darwin", "", "", filepath.Join(home, "Library", "Application Support")},
+		{"xdg wins on windows too", "windows", "/x", "/l", "/x"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dataHome(tt.goos, tt.xdg, tt.localAppData, home); got != tt.want {
+				t.Fatalf("dataHome = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

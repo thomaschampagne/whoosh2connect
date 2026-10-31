@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
@@ -57,7 +58,25 @@ func Default() Config {
 	}
 }
 
-// DefaultPaths resolves the XDG config and data directories.
+// dataHome returns the base directory for application data. XDG_DATA_HOME
+// wins on any OS when set; otherwise each OS uses its own convention.
+func dataHome(goos, xdg, localAppData, home string) string {
+	switch {
+	case xdg != "":
+		return xdg
+	case goos == "windows":
+		if localAppData != "" {
+			return localAppData
+		}
+		return filepath.Join(home, "AppData", "Local")
+	case goos == "darwin":
+		return filepath.Join(home, "Library", "Application Support")
+	default:
+		return filepath.Join(home, ".local", "share")
+	}
+}
+
+// DefaultPaths resolves the config and data directories for the current OS.
 func DefaultPaths() (Paths, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -65,15 +84,11 @@ func DefaultPaths() (Paths, error) {
 	}
 	configDir = filepath.Join(configDir, AppName)
 
-	dataDir := os.Getenv("XDG_DATA_HOME")
-	if dataDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return Paths{}, fmt.Errorf("resolve home dir: %w", err)
-		}
-		dataDir = filepath.Join(home, ".local", "share")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Paths{}, fmt.Errorf("resolve home dir: %w", err)
 	}
-	dataDir = filepath.Join(dataDir, AppName)
+	dataDir := filepath.Join(dataHome(runtime.GOOS, os.Getenv("XDG_DATA_HOME"), os.Getenv("LOCALAPPDATA"), home), AppName)
 
 	p := Paths{
 		ConfigDir:  configDir,

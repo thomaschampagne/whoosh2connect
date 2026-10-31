@@ -428,7 +428,7 @@ func (m Model) renderHint() string {
 	case m.screen == screenPreview:
 		hint = "u upload · esc back · q quit"
 	default:
-		hint = "↑/↓ move · enter preview · u upload · a upload-all · s settings · l logs · r refresh · ? help · q quit"
+		hint = "? help · q quit · ↑/↓ move · enter preview · u upload · a upload-all · w save FIT · o spoof dir · m mouse · s settings · l logs · r refresh"
 	}
 	return clip("  "+th.dim(hint), m.innerW())
 }
