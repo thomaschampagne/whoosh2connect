@@ -20,14 +20,39 @@ activity stripped of metrics. This tool fixes all three before uploading.
 
 ## Install
 
-Requires Go 1.24+.
+### From releases
+
+Download the archive for your system from the
+[Releases](https://github.com/thomaschampagne/whoosh2connect/releases) page:
+
+- Windows: `whoosh2connect-windows-amd64.zip`, or the bare `whoosh2connect.exe`
+- Linux: `whoosh2connect-linux-amd64.tar.gz`
+- macOS: `whoosh2connect-darwin-arm64.tar.gz` (Apple Silicon) or
+  `whoosh2connect-darwin-amd64.tar.gz` (Intel)
+
+Check the download against `checksums.txt`. Run `whoosh2connect --version` to see
+the release version; the TUI header shows it too.
+
+### From Scoop (Windows)
+
+This repository is its own Scoop bucket:
+
+```
+scoop bucket add whoosh2connect https://github.com/thomaschampagne/whoosh2connect
+scoop install whoosh2connect/whoosh2connect
+```
+
+The manifest in `bucket/` is regenerated on every release.
+
+### From source
+
+Requires Go 1.27 (see `go.mod`).
 
 ```sh
 just build          # builds bin/whoosh2connect with version/commit stamped in
 # or
 go install ./cmd/whoosh2connect
 ```
-
 ## Usage
 
 Run the TUI (default):
@@ -186,10 +211,12 @@ may conflict with the services' terms of service. Use at your own risk.
 ## Development
 
 ```sh
-just test     # go test ./...
+just test     # go test -race ./...
 just vet      # go vet ./...
 just lint     # golangci-lint run
 just fmt      # gofmt -s -w .
+just ci       # check-only: fmt-check, vet, test, build (what CI runs)
+just release 1.2.3   # build all platforms into dist/ (normally run by semantic-release)
 go test -race ./...   # race detector, before calling work done
 ```
 
