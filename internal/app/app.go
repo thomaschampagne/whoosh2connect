@@ -223,6 +223,38 @@ func (s *Service) checkRemote(ctx context.Context, act mywhoosh.Activity) (Uploa
 	return UploadResult{Status: StatusSkipped, Reason: ReasonRemoteMatch}, true
 }
 
+// Dry-run actions.
+const (
+	ActionUpload = "upload"
+	ActionSkip   = "skip"
+)
+
+// Decision is what a sync would do for one activity. The FIT hash check runs
+// only after download, so a planned upload may still be skipped at run time.
+type Decision struct {
+	Action string
+	Reason string
+}
+
+// Plan reports what Upload would do for act without downloading, uploading,
+// or writing to the ledger.
+func (s *Service) Plan(ctx context.Context, act mywhoosh.Activity) (Decision, error) {
+	if e, ok := s.Store.ByID(act.ID); ok && e.Status == state.StatusUploaded {
+		return Decision{Action: ActionSkip, Reason: ReasonLedgerID}, nil
+	}
+	if s.Remote == nil {
+		return Decision{Action: ActionUpload}, nil
+	}
+	_, found, err := s.Remote.FindMatch(ctx, act.ParsedStart())
+	if err != nil {
+		return Decision{}, fmt.Errorf("remote check: %w", err)
+	}
+	if found {
+		return Decision{Action: ActionSkip, Reason: ReasonRemoteMatch}, nil
+	}
+	return Decision{Action: ActionUpload}, nil
+}
+
 // uploadBytes writes fixed FIT bytes to a private temp file, uploads it, and
 // removes the file regardless of outcome.
 func (s *Service) uploadBytes(ctx context.Context, data []byte) error {

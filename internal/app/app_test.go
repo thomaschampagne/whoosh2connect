@@ -420,3 +420,46 @@ func TestUploadRemoteGuard(t *testing.T) {
 		})
 	}
 }
+
+func TestPlan(t *testing.T) {
+	tests := []struct {
+		name       string
+		seed       *state.Entry
+		remote     *fakeRemote
+		wantAction string
+		wantReason string
+		wantErr    bool
+	}{
+		{"new ride would upload", nil, nil, ActionUpload, "", false},
+		{"ledger id hit skips", &state.Entry{ID: "a1", Status: state.StatusUploaded}, nil, ActionSkip, ReasonLedgerID, false},
+		{"remote match skips", nil, &fakeRemote{found: true}, ActionSkip, ReasonRemoteMatch, false},
+		{"remote error surfaces", nil, &fakeRemote{err: errors.New("http 503")}, "", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &fakeGarmin{}
+			svc := newService(t, &fakeMyWhoosh{}, g)
+			if tt.seed != nil {
+				if err := svc.Store.Put(*tt.seed); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.remote != nil {
+				svc.Remote = tt.remote
+			}
+			d, err := svc.Plan(context.Background(), mywhoosh.Activity{ID: "a1"})
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if d.Action != tt.wantAction || d.Reason != tt.wantReason {
+				t.Errorf("got %+v, want action %q reason %q", d, tt.wantAction, tt.wantReason)
+			}
+			if g.uploads != 0 {
+				t.Errorf("plan uploaded %d times, want 0", g.uploads)
+			}
+			if _, ok := svc.Store.ByID("a1"); ok && tt.seed == nil {
+				t.Error("plan wrote to ledger")
+			}
+		})
+	}
+}
