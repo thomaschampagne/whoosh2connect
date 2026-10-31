@@ -16,10 +16,15 @@ cmd/whoosh2connect/   thin main: flags, wiring, headless mode, TUI launch
 internal/config/      YAML + env + flags (precedence: flags > env > file > defaults), XDG paths
 internal/device/      Edge presets (product IDs from the Garmin FIT SDK), serial gen/validate, apply to FIT
 internal/fit/         port of fitfix.go: fill session averages, strip temperature, spoof device
-internal/mywhoosh/    MyWhoosh API client (login, list, download) + token cache
+internal/mywhoosh/    MyWhoosh API client (login, list, download, page cap) + token cache
 internal/garmin/      token store (0600), mobile SSO + MFA, client (upload, refresh)
-internal/state/       idempotence store of uploaded activity IDs
-internal/app/         orchestration: download → fix → upload → mark, session listing
+internal/state/       sync ledger (JSON, cross-process lock, atomic writes)
+internal/fsutil/      atomic 0600 file writes
+internal/httpx/       bounded response reads, short error snippets
+internal/logx/        slog file logger with secret redaction
+internal/watch/       local FIT directory watcher (hash cache, stable scans)
+internal/app/         upload pipeline shared by API and watch paths; ledger guards; verify
+internal/garmin/      also: activity list for remote match (activities.go)
 internal/tui/         Bubble Tea model, views, settings, MFA screen
 internal/version/     build-time version/commit
 ```
@@ -51,6 +56,9 @@ just lint      # golangci-lint run
 just fmt       # gofmt -s -w .
 just tidy      # go mod tidy
 just run -- --flags  # go run ./cmd/whoosh2connect
+go test -race ./...  # race detector; required before calling work done
+go run ./cmd/whoosh2connect --no-tui --dry-run   # preview sync decisions
+go run ./cmd/whoosh2connect --verify            # ledger vs Garmin, read only
 ```
 
 Always run `gofmt -s -w`, `go vet ./...`, `go test ./...`, and

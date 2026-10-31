@@ -44,6 +44,30 @@ whoosh2connect --no-tui \
   --garmin-email you@example.com
 ```
 
+### Dry-run and verify
+
+Preview what a headless sync would do, without downloading or uploading:
+
+```sh
+whoosh2connect --no-tui --dry-run --mywhoosh-email you@example.com --garmin-email you@example.com
+```
+
+Each ride prints `would upload <id>` or `would skip <id> (reason)`. Reasons are
+`ledger hit: activity id` (already in the ledger) or `garmin match: start time`
+(Garmin already has a ride starting within 2 minutes). A ride that passes this
+preview can still be skipped during a real run when its FIT content hash is
+already in the ledger.
+
+Check the ledger against Garmin Connect, uploading nothing:
+
+```sh
+whoosh2connect --verify --garmin-email you@example.com
+```
+
+Each uploaded ride that Garmin does not show prints `mismatch <id>`, and the
+command exits with status 1. Rides recorded before start times were stored
+print `no start time recorded`.
+
 ### Flags
 
 | Flag                       | Meaning                                           |
@@ -55,6 +79,8 @@ whoosh2connect --no-tui \
 | `--device-name <name>`     | Override the displayed device name                |
 | `--device-serial <n>`      | Override the device serial (non-zero uint32)      |
 | `--no-tui`                 | Run headless and exit                             |
+| `--dry-run`                | Headless: print what would upload or skip         |
+| `--verify`                 | Check uploaded rides against Garmin, upload nothing |
 | `--version`                | Print version and exit                            |
 
 Passwords are never taken from the config file or flags. In the TUI you enter
@@ -137,13 +163,17 @@ supported:
 | `~/.local/share/whoosh2connect/`             | Data directory                                      |
 | `…/oauth1_token.json`, `…/oauth2_token.json` | Garmin tokens (mode `0600`)                         |
 | `…/mywhoosh_token.json`                      | MyWhoosh token (mode `0600`)                        |
-| `…/state.json`                               | Uploaded activity IDs for idempotence (mode `0600`) |
+| `…/state.json`                               | Sync ledger: ride IDs, FIT hashes, statuses (mode `0600`) |
+| `…/state.json.lock`                          | Lock file serialising ledger writes across processes |
+| `…/whoosh2connect.log`                       | Structured log, secrets redacted (mode `0600`)      |
 
 - Passwords are never written to disk, never passed as flags, and never logged.
 - MFA codes are used once and discarded.
 - Token files are created with mode `0600`.
-- Uploads are idempotent: an activity already uploaded (locally recorded or
-  rejected by Garmin as a duplicate) is not uploaded again.
+- Uploads are idempotent: each ride is checked against the local ledger (by MyWhoosh
+  ID and by FIT hash), then against Garmin Connect (start time within 2 minutes).
+  A ride found by any of these is not uploaded again. Garmin rejects duplicates
+  as a further guard.
 
 ## Disclaimer
 
@@ -159,6 +189,7 @@ just test     # go test ./...
 just vet      # go vet ./...
 just lint     # golangci-lint run
 just fmt      # gofmt -s -w .
+go test -race ./...   # race detector, before calling work done
 ```
 
 See `AGENTS.md` for the project layout and contribution rules.

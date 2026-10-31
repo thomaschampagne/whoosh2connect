@@ -81,3 +81,41 @@ Date: 2026-10-31. Scope: all Go packages, read in full for `internal/app`, `inte
 7. U2 (hash cache for watch).
 8. Verify command, watch remote check, README, AGENTS.md.
 9. S1: keyring. Ask Thomas first.
+
+## Status update (end of this pass)
+
+| ID | Status | Note |
+|----|--------|------|
+| D1 | FIXED | Hash index shared by API and watch paths. |
+| D2 | PARTIAL | Stale `uploading` resolved after 15 min. Remote match catches the last 100 rides only. |
+| D3 | FIXED | Upload confirmed but ledger write failed: status stays `uploaded`, warning in `Err`. Test: read-only ledger dir. |
+| D4 | FIXED | Cross-process lock, reload before every write. |
+| D5 | FIXED | In-flight set per ride ID. Test: concurrent upload of the same ride is skipped. |
+| D6 | OPEN | Remote match compares start time only. Duration and distance not compared: `MyWhoosh.RideDuration` format is not verified against a real response. Needs one sample. |
+| D7 | FIXED | Ledger hash check survives restarts. |
+| G1 | FIXED | TUI uploads use a context cancelled on exit. |
+| G2 | VERIFIED | Watch loop only waits on `ctx.Done()` or a timer. No goroutines spawned. |
+| G3 | FIXED | Bodies closed in every reviewed path. |
+| G4 | FIXED | Temp FIT removed in all paths. |
+| G5 | ACCEPTED | Synchronous ledger writes, volume is small. |
+| U1 | FIXED | Activity pages capped at 50. Test: request count equals cap. |
+| U2 | FIXED | Hash cache keyed by path, invalidated on size or mtime change, pruned. |
+| U3 | ACCEPTED | Per-process maps, bounded by rides per session. |
+| U4 | FIXED | `httpx.ReadBody` caps every response at 10 MiB. |
+| U5 | ACCEPTED | Ledger grows slowly. |
+| S1 | OPEN, ASK FIRST | Tokens still plain 0600 JSON. Keyring change needs approval. |
+| S2 | FIXED | Token files written atomically (`fsutil.WriteFileAtomic`). |
+| S3 | FIXED | JSON built with `json.Marshal`. |
+| S4 | FIXED | MyWhoosh login error no longer echoes the body. Other error snippets capped at 120 bytes. |
+| S5 | FIXED | `slog` JSON log at `whoosh2connect.log`, mode 0600, keys containing password, token, secret, mfa, code, authorization, cookie redacted. |
+| S6 | OK | No `InsecureSkipVerify`. |
+| S7 | OK | Activity IDs never become file names. |
+| S8 | FIXED | Config save is atomic. |
+| S9 | ACCEPTED | Headless passwords come from env. Documented in README. |
+| S10 | OK | No shell execution. |
+| A1 | PARTIAL | Headless and TUI share `app` pipeline. Headless still has its own print loop (thin). |
+| A2 | FIXED | TUI upload-all calls `UploadPending` in `app`. |
+| A3 | OPEN, low | `Service` still takes concrete `*state.Store`. |
+| A4 | ACCEPTED | Test hook in `garmin.Options`. |
+| A5 | ACCEPTED | Small duplicate helpers. |
+| A8 | OPEN, low | Garmin token fields public. |
