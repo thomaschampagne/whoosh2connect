@@ -28,12 +28,12 @@ scoop install whoosh2connect/whoosh2connect
 Grab the archive for your system from
 [Releases](https://github.com/thomaschampagne/whoosh2connect/releases):
 
-| Platform | Asset |
-| --- | --- |
-| Windows | `whoosh2connect-windows-amd64.zip`, or the bare `whoosh2connect.exe` |
-| Linux x86-64 | `whoosh2connect-linux-amd64.tar.gz` |
-| macOS Apple Silicon | `whoosh2connect-darwin-arm64.tar.gz` |
-| macOS Intel | `whoosh2connect-darwin-amd64.tar.gz` |
+| Platform            | Asset                                                                |
+| ------------------- | -------------------------------------------------------------------- |
+| Windows             | `whoosh2connect-windows-amd64.zip`, or the bare `whoosh2connect.exe` |
+| Linux x86-64        | `whoosh2connect-linux-amd64.tar.gz`                                  |
+| macOS Apple Silicon | `whoosh2connect-darwin-arm64.tar.gz`                                 |
+| macOS Intel         | `whoosh2connect-darwin-amd64.tar.gz`                                 |
 
 Check the download against `checksums.txt`, then confirm the version:
 
@@ -67,13 +67,13 @@ recognised Garmin device, with sane session averages and no bogus sensor data.
 A MyWhoosh export fails all three: no session averages, a fake temperature, an
 unknown device. `whoosh2connect` fixes the file before it is uploaded.
 
-| Before | After |
-| --- | --- |
-| Unknown device, no metrics | Uploads as the Edge you pick (Edge 540 by default) |
-| No Training Effect | Training Effect computed |
-| No Training Load | Training Load counted |
-| VO2max untouched | VO2max updated |
-| Fake temperature in the file | Temperature stripped |
+| Before                       | After                                              |
+| ---------------------------- | -------------------------------------------------- |
+| Unknown device, no metrics   | Uploads as the Edge you pick (Edge 540 by default) |
+| No Training Effect           | Training Effect computed                           |
+| No Training Load             | Training Load counted                              |
+| VO2max untouched             | VO2max updated                                     |
+| Fake temperature in the file | Temperature stripped                               |
 
 The device is not hardcoded. 32 Edge presets ship with the binary, and the
 serial is generated once, persisted, and kept stable so Garmin sees one
@@ -100,21 +100,21 @@ consistent device ride after ride.
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
-| Key | Action |
-| --- | --- |
-| `↑` / `↓` or `k` / `j` | Move through the ride list |
-| `enter` | Preview a ride |
-| `u` | Upload the selected ride |
-| `a` | Upload every new ride |
-| `t` | Toggle auto-watch |
-| `r` | Refresh the MyWhoosh ride list |
-| `s` | Settings: emails, passwords, device preset, name, serial |
-| `l` | Log panel |
-| `m` | Toggle mouse capture (off lets you select and copy text) |
-| `w` | Save the spoofed FIT file next to the binary |
-| `o` | Open the spoofed FIT folder |
-| `?` | Help |
-| `q` or `ctrl+c` | Quit |
+| Key                    | Action                                                   |
+| ---------------------- | -------------------------------------------------------- |
+| `↑` / `↓` or `k` / `j` | Move through the ride list                               |
+| `enter`                | Preview a ride                                           |
+| `u`                    | Upload the selected ride                                 |
+| `a`                    | Upload every new ride                                    |
+| `t`                    | Toggle auto-watch                                        |
+| `r`                    | Refresh the MyWhoosh ride list                           |
+| `s`                    | Settings: emails, passwords, device preset, name, serial |
+| `l`                    | Log panel                                                |
+| `m`                    | Toggle mouse capture (off lets you select and copy text) |
+| `w`                    | Save the spoofed FIT file next to the binary             |
+| `o`                    | Open the spoofed FIT folder                              |
+| `?`                    | Help                                                     |
+| `q` or `ctrl+c`        | Quit                                                     |
 
 ## Auto-watch
 
@@ -153,21 +153,21 @@ service.
 
 ### Flags
 
-| Flag | Meaning |
-| --- | --- |
-| `--config <path>` | Path to the config YAML (default: XDG config dir) |
-| `--mywhoosh-email <email>` | MyWhoosh account email |
-| `--garmin-email <email>` | Garmin Connect email |
-| `--device-preset <id>` | Device to spoof (e.g. `edge_540`, `edge_1030`) |
-| `--device-name <name>` | Override the displayed device name |
-| `--device-serial <n>` | Override the device serial (non-zero uint32) |
-| `--watch <dir\|auto>` | Watch a local MyWhoosh folder and auto-upload |
-| `--watch-interval <s>` | Seconds between scans in watch mode (default 10) |
-| `--watch-stable <n>` | Consecutive stable scans before a ride counts as done (default 2) |
-| `--no-tui` | Run headless and exit |
-| `--dry-run` | Headless: print what would upload or skip |
-| `--verify` | Check uploaded rides against Garmin, upload nothing |
-| `--version` | Print version and exit |
+| Flag                       | Meaning                                                           |
+| -------------------------- | ----------------------------------------------------------------- |
+| `--config <path>`          | Path to the config YAML (default: XDG config dir)                 |
+| `--mywhoosh-email <email>` | MyWhoosh account email                                            |
+| `--garmin-email <email>`   | Garmin Connect email                                              |
+| `--device-preset <id>`     | Device to spoof (e.g. `edge_540`, `edge_1030`)                    |
+| `--device-name <name>`     | Override the displayed device name                                |
+| `--device-serial <n>`      | Override the device serial (non-zero uint32)                      |
+| `--watch <dir\|auto>`      | Watch a local MyWhoosh folder and auto-upload                     |
+| `--watch-interval <s>`     | Seconds between scans in watch mode (default 10)                  |
+| `--watch-stable <n>`       | Consecutive stable scans before a ride counts as done (default 2) |
+| `--no-tui`                 | Run headless and exit                                             |
+| `--dry-run`                | Headless: print what would upload or skip                         |
+| `--verify`                 | Check uploaded rides against Garmin, upload nothing               |
+| `--version`                | Print version and exit                                            |
 
 ### Configuration
 
@@ -192,16 +192,16 @@ watch:
 
 Environment variables:
 
-| Variable | Purpose |
-| --- | --- |
-| `WHOOSH2CONNECT_CONFIG` | Config file path |
-| `WHOOSH2CONNECT_MYWHOOSH_EMAIL` | MyWhoosh email |
-| `WHOOSH2CONNECT_GARMIN_EMAIL` | Garmin email |
+| Variable                           | Purpose                      |
+| ---------------------------------- | ---------------------------- |
+| `WHOOSH2CONNECT_CONFIG`            | Config file path             |
+| `WHOOSH2CONNECT_MYWHOOSH_EMAIL`    | MyWhoosh email               |
+| `WHOOSH2CONNECT_GARMIN_EMAIL`      | Garmin email                 |
 | `WHOOSH2CONNECT_MYWHOOSH_PASSWORD` | MyWhoosh password (headless) |
-| `WHOOSH2CONNECT_GARMIN_PASSWORD` | Garmin password (headless) |
-| `WHOOSH2CONNECT_DEVICE_PRESET` | Device preset ID |
-| `WHOOSH2CONNECT_DEVICE_NAME` | Device name override |
-| `WHOOSH2CONNECT_DEVICE_SERIAL` | Device serial override |
+| `WHOOSH2CONNECT_GARMIN_PASSWORD`   | Garmin password (headless)   |
+| `WHOOSH2CONNECT_DEVICE_PRESET`     | Device preset ID             |
+| `WHOOSH2CONNECT_DEVICE_NAME`       | Device name override         |
+| `WHOOSH2CONNECT_DEVICE_SERIAL`     | Device serial override       |
 
 ### Device presets
 
@@ -263,18 +263,18 @@ supported:
 
 ### Files and security
 
-| Path | Contents |
-| --- | --- |
-| `~/.config/whoosh2connect/config.yaml` | Non-secret config (emails, device, watch) |
-| Linux: `~/.local/share/whoosh2connect/` | Data directory |
-| macOS: `~/Library/Application Support/whoosh2connect/` | Data directory |
-| Windows: `%LOCALAPPDATA%\whoosh2connect\` | Data directory |
-| `…/oauth1_token.json`, `…/oauth2_token.json` | Garmin tokens (mode `0600`) |
-| `…/mywhoosh_token.json` | MyWhoosh token (mode `0600`) |
-| `…/state.json` | Sync ledger: ride IDs, FIT hashes, statuses (mode `0600`) |
-| `…/state.json.lock` | Lock file serialising ledger writes across processes |
-| `whoosh2connect.log` (next to the executable) | Structured log, overwritten on each start, secrets redacted (mode `0600`) |
-| `spoofed/<id>.fit` (next to the executable) | Spoofed FIT, saved only when you press `w` (mode `0600`); `o` opens the folder |
+| Path                                                   | Contents                                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `~/.config/whoosh2connect/config.yaml`                 | Non-secret config (emails, device, watch)                                      |
+| Linux: `~/.local/share/whoosh2connect/`                | Data directory                                                                 |
+| macOS: `~/Library/Application Support/whoosh2connect/` | Data directory                                                                 |
+| Windows: `%LOCALAPPDATA%\whoosh2connect\`              | Data directory                                                                 |
+| `…/oauth1_token.json`, `…/oauth2_token.json`           | Garmin tokens (mode `0600`)                                                    |
+| `…/mywhoosh_token.json`                                | MyWhoosh token (mode `0600`)                                                   |
+| `…/state.json`                                         | Sync ledger: ride IDs, FIT hashes, statuses (mode `0600`)                      |
+| `…/state.json.lock`                                    | Lock file serialising ledger writes across processes                           |
+| `whoosh2connect.log` (next to the executable)          | Structured log, overwritten on each start, secrets redacted (mode `0600`)      |
+| `spoofed/<id>.fit` (next to the executable)            | Spoofed FIT, saved only when you press `w` (mode `0600`); `o` opens the folder |
 
 - Passwords are never written to disk, never passed as flags, and never logged.
 - MFA codes are used once and discarded.
