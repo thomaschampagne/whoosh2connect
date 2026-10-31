@@ -67,7 +67,12 @@ func (f *fakeGarmin) UploadFIT(ctx context.Context, filePath string) error {
 }
 
 func fixture() []byte {
-	now := time.Now().Truncate(time.Second)
+	return fixtureAt(time.Now().Truncate(time.Second))
+}
+
+// fixtureAt builds an activity FIT starting at now. Different starts give
+// different bytes, so distinct rides do not collide on the FIT hash.
+func fixtureAt(now time.Time) []byte {
 	activity := filedef.NewActivity()
 	activity.FileId.
 		SetType(typedef.FileActivity).
@@ -110,7 +115,7 @@ func newService(t *testing.T, mw *fakeMyWhoosh, g *fakeGarmin) *Service {
 	return New(mw, g, st, device.Device{
 		Preset: device.Presets()[0],
 		Serial: 1234,
-	})
+	}, nil)
 }
 
 func activity() mywhoosh.Activity {

@@ -1,5 +1,7 @@
 // Package app orchestrates the sync workflow: MyWhoosh session listing and FIT
 // download, FIT fixing, device spoofing, Garmin upload, and idempotent state.
+// Both the MyWhoosh API path and the local watch path share one pipeline (run),
+// so dedupe rules apply identically to every ride.
 package app
 
 import (
@@ -9,7 +11,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"whoosh2connect/internal/device"
@@ -25,6 +29,20 @@ const (
 	StatusDuplicate = "duplicate"
 	StatusFailed    = "failed"
 	StatusSkipped   = "skipped"
+)
+
+// Reasons explain a skipped upload.
+const (
+	ReasonLedgerID    = "ledger hit: activity id"
+	ReasonLedgerHash  = "ledger hit: fit hash"
+	ReasonRemoteMatch = "garmin match: start time"
+	ReasonInFlight    = "already uploading"
+)
+
+// Dry-run actions.
+const (
+	ActionUpload = "upload"
+	ActionSkip   = "skip"
 )
 
 // MyWhooshAPI is the slice of the MyWhoosh client the service needs.
@@ -50,18 +68,32 @@ type RemoteChecker interface {
 	FindMatch(ctx context.Context, start time.Time) (garminID string, found bool, err error)
 }
 
-// Service ties the pieces together.
+// Service ties the pieces together. Its zero value is not usable; use New.
 type Service struct {
 	MyWhoosh MyWhooshAPI
 	Garmin   GarminAPI
 	Store    *state.Store
 	Device   device.Device
 	Remote   RemoteChecker
+	Log      *slog.Logger
+
+	mu       sync.Mutex
+	inflight map[string]struct{}
 }
 
-// New creates a Service.
-func New(mw MyWhooshAPI, g GarminAPI, st *state.Store, dev device.Device) *Service {
-	return &Service{MyWhoosh: mw, Garmin: g, Store: st, Device: dev}
+// New creates a Service. A nil logger discards log output.
+func New(mw MyWhooshAPI, g GarminAPI, st *state.Store, dev device.Device, log *slog.Logger) *Service {
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
+	return &Service{
+		MyWhoosh: mw,
+		Garmin:   g,
+		Store:    st,
+		Device:   dev,
+		Log:      log,
+		inflight: map[string]struct{}{},
+	}
 }
 
 // Session is a MyWhoosh activity annotated with upload status.
@@ -71,19 +103,28 @@ type Session struct {
 	UploadedAt time.Time
 }
 
-// Reasons explain a skipped upload.
-const (
-	ReasonLedgerID    = "ledger hit: activity id"
-	ReasonLedgerHash  = "ledger hit: fit hash"
-	ReasonRemoteMatch = "garmin match: start time"
-)
-
-// UploadResult reports the outcome of an upload attempt.
+// UploadResult reports the outcome of an upload attempt. Status uploaded with
+// a non-nil Err means the ride reached Garmin but the ledger write failed; the
+// next remote check confirms it.
 type UploadResult struct {
 	Status string
 	Reason string
 	Stats  fit.Stats
 	Err    error
+}
+
+// Decision is what a sync would do for one activity. The FIT hash check runs
+// only after download, so a planned upload may still be skipped at run time.
+type Decision struct {
+	Action string
+	Reason string
+}
+
+// Finding is one ledger entry that failed verification against Garmin.
+type Finding struct {
+	ID     string
+	Start  time.Time
+	Detail string
 }
 
 // LoginMyWhoosh resumes a cached session or logs in fresh.
@@ -129,111 +170,48 @@ func (s *Service) Sessions(ctx context.Context) ([]Session, error) {
 	return out, nil
 }
 
-// Upload downloads, fixes, and uploads one activity. Duplicates are detected
-// both locally (already marked) and remotely (Garmin 409) and marked uploaded.
+// Upload downloads, fixes, and uploads one MyWhoosh activity.
 func (s *Service) Upload(ctx context.Context, act mywhoosh.Activity) UploadResult {
-	if e, ok := s.Store.ByID(act.ID); ok && e.Status == state.StatusUploaded {
-		return UploadResult{Status: StatusSkipped, Reason: ReasonLedgerID}
-	}
-	if res, skip := s.checkRemote(ctx, act); skip {
-		return res
-	}
-
 	fileID := act.ActivityFileID
 	if fileID == "" {
 		fileID = act.ID
 	}
-	fitData, err := s.MyWhoosh.DownloadFit(ctx, fileID)
-	if err != nil {
-		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("download: %w", err)}
+	return s.run(ctx, act.ID, act.ParsedStart(), func(ctx context.Context) ([]byte, error) {
+		data, err := s.MyWhoosh.DownloadFit(ctx, fileID)
+		if err != nil {
+			return nil, fmt.Errorf("download: %w", err)
+		}
+		return data, nil
+	})
+}
+
+// UploadPending uploads every activity in sessions that is not yet synced,
+// in order, stopping early when ctx is cancelled. report is called once per
+// attempted activity.
+func (s *Service) UploadPending(ctx context.Context, sessions []Session, report func(mywhoosh.Activity, UploadResult)) {
+	for _, sess := range sessions {
+		if ctx.Err() != nil {
+			return
+		}
+		if sess.Uploaded {
+			continue
+		}
+		report(sess.Activity, s.Upload(ctx, sess.Activity))
 	}
-	return s.uploadFit(ctx, act.ID, fitData)
 }
 
 // ProcessLocalFit fixes and uploads a local MyWhoosh FIT export (watch mode).
-// The ledger key is the ride's ID; dedup by spoofed-FIT hash still applies.
+// The ledger key is id; dedupe by spoofed-FIT hash still applies.
 func (s *Service) ProcessLocalFit(ctx context.Context, id, path string) UploadResult {
-	if e, ok := s.Store.ByID(id); ok && e.Status == state.StatusUploaded {
-		return UploadResult{Status: StatusSkipped, Reason: ReasonLedgerID}
-	}
-	fitData, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("read fit: %w", err)}
 	}
-	return s.uploadFit(ctx, id, fitData)
-}
-
-// uploadFit fixes and spoofs raw FIT bytes, checks the ledger by hash, then
-// uploads. The ledger records "uploading" before the POST so a lost response
-// is visible on the next run.
-func (s *Service) uploadFit(ctx context.Context, id string, fitData []byte) UploadResult {
-	var fixed bytes.Buffer
-	stats, err := fit.Fix(bytes.NewReader(fitData), &fixed, s.Device)
+	start, err := fit.StartTime(raw)
 	if err != nil {
-		return s.fail(id, "", fmt.Errorf("fix fit: %w", err))
+		s.Log.Warn("no start time in fit, remote check skipped", "id", id, "err", err)
 	}
-	sum := sha256.Sum256(fixed.Bytes())
-	hash := hex.EncodeToString(sum[:])
-
-	if prev, ok := s.Store.ByHash(hash); ok && prev.Status == state.StatusUploaded {
-		if err := s.Store.Put(state.Entry{ID: id, Hash: hash, Status: state.StatusUploaded}); err != nil {
-			return s.fail(id, hash, err)
-		}
-		return UploadResult{Status: StatusSkipped, Reason: ReasonLedgerHash, Stats: stats}
-	}
-
-	if err := s.Store.Put(state.Entry{ID: id, Hash: hash, Status: state.StatusUploading}); err != nil {
-		return s.fail(id, hash, fmt.Errorf("ledger: %w", err))
-	}
-
-	err = s.uploadBytes(ctx, fixed.Bytes())
-	switch {
-	case errors.Is(err, garmin.ErrDuplicate):
-		if merr := s.Store.Put(state.Entry{ID: id, Hash: hash, Status: state.StatusUploaded}); merr != nil {
-			return s.fail(id, hash, merr)
-		}
-		return UploadResult{Status: StatusDuplicate, Stats: stats, Err: err}
-	case err != nil:
-		return UploadResult{Status: StatusFailed, Stats: stats, Err: s.recordFailure(id, hash, fmt.Errorf("upload: %w", err))}
-	}
-
-	if err := s.Store.Put(state.Entry{ID: id, Hash: hash, Status: state.StatusUploaded}); err != nil {
-		return UploadResult{Status: StatusFailed, Stats: stats, Err: err}
-	}
-	return UploadResult{Status: StatusUploaded, Stats: stats}
-}
-
-// checkRemote asks Garmin whether the ride already exists. It returns skip=true
-// when the ride must not be uploaded: either a match was found (recorded as
-// uploaded) or the check failed (the ride is never uploaded unverified).
-func (s *Service) checkRemote(ctx context.Context, act mywhoosh.Activity) (UploadResult, bool) {
-	if s.Remote == nil {
-		return UploadResult{}, false
-	}
-	gid, found, err := s.Remote.FindMatch(ctx, act.ParsedStart())
-	if err != nil {
-		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("remote check: %w", err)}, true
-	}
-	if !found {
-		return UploadResult{}, false
-	}
-	if err := s.Store.Put(state.Entry{ID: act.ID, GarminID: gid, Status: state.StatusUploaded}); err != nil {
-		return UploadResult{Status: StatusFailed, Err: err}, true
-	}
-	return UploadResult{Status: StatusSkipped, Reason: ReasonRemoteMatch}, true
-}
-
-// Dry-run actions.
-const (
-	ActionUpload = "upload"
-	ActionSkip   = "skip"
-)
-
-// Decision is what a sync would do for one activity. The FIT hash check runs
-// only after download, so a planned upload may still be skipped at run time.
-type Decision struct {
-	Action string
-	Reason string
+	return s.run(ctx, id, start, func(context.Context) ([]byte, error) { return raw, nil })
 }
 
 // Plan reports what Upload would do for act without downloading, uploading,
@@ -255,6 +233,138 @@ func (s *Service) Plan(ctx context.Context, act mywhoosh.Activity) (Decision, er
 	return Decision{Action: ActionUpload}, nil
 }
 
+// Verify checks every uploaded ledger entry against Garmin Connect. It uploads
+// nothing and reports entries that Garmin does not show.
+func (s *Service) Verify(ctx context.Context) ([]Finding, error) {
+	if s.Remote == nil {
+		return nil, fmt.Errorf("remote check not configured")
+	}
+	var out []Finding
+	for _, e := range s.Store.Entries() {
+		if e.Status != state.StatusUploaded {
+			continue
+		}
+		if e.Start.IsZero() {
+			out = append(out, Finding{ID: e.ID, Detail: "no start time recorded, cannot verify"})
+			continue
+		}
+		_, found, err := s.Remote.FindMatch(ctx, e.Start)
+		if err != nil {
+			return out, fmt.Errorf("verify %s: %w", e.ID, err)
+		}
+		if !found {
+			out = append(out, Finding{ID: e.ID, Start: e.Start, Detail: "uploaded but not found on Garmin"})
+		}
+	}
+	return out, nil
+}
+
+// run is the single upload pipeline for every ride source. fetch supplies the
+// raw FIT bytes and is called only after the ledger and remote guards pass.
+func (s *Service) run(ctx context.Context, id string, start time.Time, fetch func(context.Context) ([]byte, error)) UploadResult {
+	if e, ok := s.Store.ByID(id); ok && e.Status == state.StatusUploaded {
+		return UploadResult{Status: StatusSkipped, Reason: ReasonLedgerID}
+	}
+	if !s.begin(id) {
+		return UploadResult{Status: StatusSkipped, Reason: ReasonInFlight}
+	}
+	defer s.end(id)
+
+	if res, skip := s.checkRemote(ctx, id, start); skip {
+		s.Log.Info("ride skipped", "id", id, "reason", res.Reason, "status", res.Status)
+		return res
+	}
+	raw, err := fetch(ctx)
+	if err != nil {
+		return s.fail(id, "", start, err)
+	}
+	res := s.uploadFit(ctx, id, start, raw)
+	s.Log.Info("ride processed", "id", id, "status", res.Status)
+	return res
+}
+
+func (s *Service) begin(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, busy := s.inflight[id]; busy {
+		return false
+	}
+	s.inflight[id] = struct{}{}
+	return true
+}
+
+func (s *Service) end(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.inflight, id)
+}
+
+// uploadFit fixes and spoofs raw FIT bytes, checks the ledger by hash, then
+// uploads. The ledger records "uploading" before the POST so a lost response
+// is visible on the next run.
+func (s *Service) uploadFit(ctx context.Context, id string, start time.Time, raw []byte) UploadResult {
+	var fixed bytes.Buffer
+	stats, err := fit.Fix(bytes.NewReader(raw), &fixed, s.Device)
+	if err != nil {
+		return s.fail(id, "", start, fmt.Errorf("fix fit: %w", err))
+	}
+	sum := sha256.Sum256(fixed.Bytes())
+	hash := hex.EncodeToString(sum[:])
+
+	if prev, ok := s.Store.ByHash(hash); ok && prev.Status == state.StatusUploaded {
+		if err := s.Store.Put(state.Entry{ID: id, Hash: hash, Start: start, Status: state.StatusUploaded}); err != nil {
+			return s.fail(id, hash, start, err)
+		}
+		return UploadResult{Status: StatusSkipped, Reason: ReasonLedgerHash, Stats: stats}
+	}
+
+	if err := s.Store.Put(state.Entry{ID: id, Hash: hash, Start: start, Status: state.StatusUploading}); err != nil {
+		return s.fail(id, hash, start, fmt.Errorf("ledger: %w", err))
+	}
+
+	err = s.uploadBytes(ctx, fixed.Bytes())
+	switch {
+	case errors.Is(err, garmin.ErrDuplicate):
+		return s.markUploaded(id, hash, start, stats, err, StatusDuplicate)
+	case err != nil:
+		return UploadResult{Status: StatusFailed, Stats: stats, Err: s.recordFailure(id, hash, start, fmt.Errorf("upload: %w", err))}
+	}
+	return s.markUploaded(id, hash, start, stats, nil, StatusUploaded)
+}
+
+// markUploaded records a confirmed upload. If the ledger write fails the ride
+// is still on Garmin, so the status stays uploaded and the ledger error is
+// returned as a warning.
+func (s *Service) markUploaded(id, hash string, start time.Time, stats fit.Stats, cause error, status string) UploadResult {
+	err := s.Store.Put(state.Entry{ID: id, Hash: hash, Start: start, Status: state.StatusUploaded})
+	if err != nil {
+		s.Log.Error("ledger write failed after upload", "id", id, "err", err)
+		return UploadResult{Status: status, Stats: stats, Err: fmt.Errorf("ledger write failed: %w", err)}
+	}
+	return UploadResult{Status: status, Stats: stats, Err: cause}
+}
+
+// checkRemote asks Garmin whether the ride already exists. It returns skip=true
+// when the ride must not be uploaded: either a match was found (recorded as
+// uploaded) or the check failed (the ride is never uploaded unverified). A zero
+// start time disables the check.
+func (s *Service) checkRemote(ctx context.Context, id string, start time.Time) (UploadResult, bool) {
+	if s.Remote == nil || start.IsZero() {
+		return UploadResult{}, false
+	}
+	gid, found, err := s.Remote.FindMatch(ctx, start)
+	if err != nil {
+		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("remote check: %w", err)}, true
+	}
+	if !found {
+		return UploadResult{}, false
+	}
+	if err := s.Store.Put(state.Entry{ID: id, GarminID: gid, Start: start, Status: state.StatusUploaded}); err != nil {
+		return UploadResult{Status: StatusFailed, Err: fmt.Errorf("ledger: %w", err)}, true
+	}
+	return UploadResult{Status: StatusSkipped, Reason: ReasonRemoteMatch}, true
+}
+
 // uploadBytes writes fixed FIT bytes to a private temp file, uploads it, and
 // removes the file regardless of outcome.
 func (s *Service) uploadBytes(ctx context.Context, data []byte) error {
@@ -273,14 +383,14 @@ func (s *Service) uploadBytes(ctx context.Context, data []byte) error {
 	return s.Garmin.UploadFIT(ctx, tmp.Name())
 }
 
-func (s *Service) fail(id, hash string, err error) UploadResult {
-	return UploadResult{Status: StatusFailed, Err: s.recordFailure(id, hash, err)}
+func (s *Service) fail(id, hash string, start time.Time, err error) UploadResult {
+	return UploadResult{Status: StatusFailed, Err: s.recordFailure(id, hash, start, err)}
 }
 
 // recordFailure stores the failure in the ledger and returns err, or the
 // ledger error if that also fails.
-func (s *Service) recordFailure(id, hash string, err error) error {
-	if merr := s.Store.Put(state.Entry{ID: id, Hash: hash, Status: state.StatusFailed, LastError: err.Error()}); merr != nil {
+func (s *Service) recordFailure(id, hash string, start time.Time, err error) error {
+	if merr := s.Store.Put(state.Entry{ID: id, Hash: hash, Start: start, Status: state.StatusFailed, LastError: err.Error()}); merr != nil {
 		return fmt.Errorf("%w (ledger: %v)", err, merr)
 	}
 	return err
@@ -290,6 +400,9 @@ func (s *Service) recordFailure(id, hash string, err error) error {
 func (r UploadResult) DescribeUpload() string {
 	switch r.Status {
 	case StatusUploaded:
+		if r.Err != nil {
+			return "uploaded, " + r.Err.Error()
+		}
 		return "uploaded"
 	case StatusDuplicate:
 		return "already on Garmin (duplicate)"
