@@ -49,7 +49,7 @@ Reply in caveman mode (terse, fragments, no filler/preamble/postamble). Exact va
 ## Commands
 
 ```
-just build     # build bin/whoosh2connect with version ldflags
+just build     # build dist/whoosh2connect with version ldflags
 just test      # go test ./...
 just vet       # go vet ./...
 just lint      # golangci-lint run

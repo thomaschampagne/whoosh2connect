@@ -49,7 +49,7 @@ The manifest in `bucket/` is regenerated on every release.
 Requires Go 1.27 (see `go.mod`).
 
 ```sh
-just build          # builds bin/whoosh2connect with version/commit stamped in
+just build          # builds dist/whoosh2connect with version/commit stamped in
 # or
 go install ./cmd/whoosh2connect
 ```

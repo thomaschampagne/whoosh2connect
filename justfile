@@ -33,13 +33,13 @@ fmt-check:
 
 # --- build ----------------------------------------------------------------
 
-# build the host binary into bin/whoosh2connect
+# build the host binary into dist/whoosh2connect
 build:
-    go build -ldflags "{{ldflags}}" -o bin/{{binary}} ./cmd/{{binary}}
+    go build -ldflags "{{ldflags}}" -o dist/{{binary}} ./cmd/{{binary}}
 
-# run the CLI from bin/ so the log lands next to the binary (e.g. just run --version)
+# run the CLI from dist/ so the log lands next to the binary (e.g. just run --version)
 run *args: build
-    ./bin/{{binary}} {{args}}
+    ./dist/{{binary}} {{args}}
 
 tidy:
     go mod tidy
