@@ -10,7 +10,7 @@ Last checkpoint: 2026-10-31. Read this first, then `docs/superpowers/specs/2026-
   - Done: Garmin remote checker `garmin.Client.FindMatch` (activities list endpoint verified in garth cassettes, ±2 min start window, max 5 pages x 20). Wired in `buildService`.
   - Done: `--dry-run` (headless) prints would-upload or would-skip with reason (ledger id, remote match). Hash check cannot run before download, so planned uploads may still skip at run time.
   - Not done: verify command. Watch mode has no remote check (needs FIT session start time). Remote match on start time only; duration and distance not compared yet. Rides older than 100 most recent are not checked remotely (ledger covers them).
-- Goal 2, quality. Partial. Done: `docs/audit.md` written (D1-D7, G1-G5, U1-U5, S1-S10, A1-A8). DownloadFit JSON injection fixed. Missing: `docs/audit.md`, watch `seen` map growth, goroutine/leak check, README, AGENTS.md update.
+- Goal 2, quality. Partial. Done: D4 fixed (ledger lock + reload, commit `state` lock). `docs/audit.md` written (D1-D7, G1-G5, U1-U5, S1-S10, A1-A8). DownloadFit JSON injection fixed. Missing: `docs/audit.md`, watch `seen` map growth, goroutine/leak check, README, AGENTS.md update.
 
 ## Commands
 
@@ -41,4 +41,4 @@ just build && just run -- --no-tui
 ## Next concrete step
 
 1. Ask Thomas for the Garmin activity-list endpoint (HAR capture or approval to use a named endpoint).
-2. Next: `docs/audit.md`, then verify command (ledger vs Garmin, report only), then watch-mode remote check (FIT session start time). Also still open: config test failure, README, AGENTS.md.
+2. Next: D5 (per-ID in-flight guard in app), then U4/U1 (body limits, page cap), then verify command (ledger vs Garmin, report only), then watch-mode remote check (FIT session start time). Also still open: config test failure, README, AGENTS.md.
