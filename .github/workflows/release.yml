@@ -1,0 +1,116 @@
+name: Release
+
+# semantic-release: conventional commits on main decide the next semver
+# (feat -> minor, fix/perf -> patch, BREAKING CHANGE -> major), tag X.Y.Z,
+# create the GitHub Release, and attach the Linux, Windows and macOS builds.
+# Runs only after the CI checks pass on the same commit.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # tag + release
+      issues: write
+      pull-requests: write
+    outputs:
+      published: ${{ steps.detect.outputs.published }}
+      tag: ${{ steps.detect.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # semantic-release needs full history + tags
+          persist-credentials: true
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: extractions/setup-just@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+      # Captured before semantic-release so the detect step can tell a new
+      # release from the existing one.
+      - name: Capture pre-release tag
+        id: before
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "tag=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+      - name: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          npx --yes
+          -p semantic-release@25
+          -p @semantic-release/exec@7
+          semantic-release
+      - name: Detect new release
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE: ${{ steps.before.outputs.tag }}
+        run: |
+          for i in 1 2 3; do
+            after=$(gh release list --limit 1 --json tagName -q '.[0].tagName') && break
+            sleep 3
+          done
+          [ -n "$after" ] || { echo "could not read the latest release"; exit 1; }
+          if [ "$after" != "$BEFORE" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$after" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # This repo is its own Scoop bucket (scoop bucket add <name> <repo-url>), so
+  # the manifest is committed straight back to main on every release.
+  bucket:
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the manifest commit
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true # push back with GITHUB_TOKEN
+      - uses: extractions/setup-just@v4
+      - name: Read the release checksum
+        id: hash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ needs.release.outputs.tag }}" --pattern checksums.txt --dir "$RUNNER_TEMP"
+          sha=$(awk '$2 == "whoosh2connect.exe" { print $1 }' "$RUNNER_TEMP/checksums.txt")
+          [ -n "$sha" ] || { echo "no whoosh2connect.exe hash in checksums.txt"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Render bucket manifest
+        run: |
+          just scoop-manifest \
+            "${{ needs.release.outputs.tag }}" \
+            "${{ steps.hash.outputs.sha }}" \
+            > bucket/whoosh2connect.json
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bucket/
+          if git diff --cached --quiet; then
+            echo "bucket manifest already up to date"
+          else
+            git commit -m "chore: update bucket manifest for ${{ needs.release.outputs.tag }}"
+            git push origin HEAD:main
+          fi

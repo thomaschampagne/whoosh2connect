@@ -1,0 +1,27 @@
+{
+  "branches": ["main"],
+  "tagFormat": "${version}",
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "just release ${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "dist/whoosh2connect.exe", "label": "whoosh2connect.exe" },
+          { "path": "dist/whoosh2connect-windows-amd64.zip", "label": "whoosh2connect-windows-amd64.zip" },
+          { "path": "dist/whoosh2connect-linux-amd64.tar.gz", "label": "whoosh2connect-linux-amd64.tar.gz" },
+          { "path": "dist/whoosh2connect-darwin-amd64.tar.gz", "label": "whoosh2connect-darwin-amd64.tar.gz" },
+          { "path": "dist/whoosh2connect-darwin-arm64.tar.gz", "label": "whoosh2connect-darwin-arm64.tar.gz" },
+          { "path": "dist/checksums.txt", "label": "checksums.txt (sha256)" }
+        ]
+      }
+    ]
+  ]
+}

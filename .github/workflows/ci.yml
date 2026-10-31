@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_call: # main pushes are checked via release.yml
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: quality guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: extractions/setup-just@v4
+      - name: quality guards
+        run: just ci
