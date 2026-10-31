@@ -102,16 +102,16 @@ func New(opts Options) Model {
 		th = lightTheme
 	}
 	m := Model{
-		svc:      opts.Service,
-		ctx:      opts.Context,
-		settings: opts.Settings,
-		saveFn:   func(Settings) error { return nil },
-		th:       th,
-		results:  make(map[string]string),
-		screen:   screenLoading,
-		mouseOn:  true,
-		spoofDir: opts.SpoofDir,
-		openDir:  opts.OpenDir,
+		svc:       opts.Service,
+		ctx:       opts.Context,
+		settings:  opts.Settings,
+		saveFn:    func(Settings) error { return nil },
+		th:        th,
+		results:   make(map[string]string),
+		screen:    screenLoading,
+		mouseOn:   true,
+		spoofDir:  opts.SpoofDir,
+		openDir:   opts.OpenDir,
 		watchOpts: opts.Watch,
 	}
 	if opts.Context == nil {
