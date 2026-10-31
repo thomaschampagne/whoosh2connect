@@ -8,8 +8,9 @@ Last checkpoint: 2026-10-31. Read this first, then `docs/superpowers/specs/2026-
   - Done: JSON ledger (`internal/state`) with statuses, hash index, atomic 0600 writes, v1 migration, stale `uploading` resolved to `failed` on open, corrupt file never overwritten.
   - Done: `internal/app` uses ledger. Dedup by ID and by spoofed-FIT hash. `uploading` written before POST. 409 recorded as uploaded. Remote-check hook (`RemoteChecker`, nil = off). Remote error = no upload.
   - Done: Garmin remote checker `garmin.Client.FindMatch` (activities list endpoint verified in garth cassettes, ±2 min start window, max 5 pages x 20). Wired in `buildService`.
-  - Not done: dry-run mode. Verify command. Watch mode has no remote check (needs FIT session start time). Remote match on start time only; duration and distance not compared yet. Rides older than 100 most recent are not checked remotely (ledger covers them).
-- Goal 2, quality. Not started except where noted above. Missing: `docs/audit.md`, security fixes (`DownloadFit` builds JSON with `fmt.Sprintf`, use `json.Marshal`), watch `seen` map growth, goroutine/leak check, README, AGENTS.md update.
+  - Done: `--dry-run` (headless) prints would-upload or would-skip with reason (ledger id, remote match). Hash check cannot run before download, so planned uploads may still skip at run time.
+  - Not done: verify command. Watch mode has no remote check (needs FIT session start time). Remote match on start time only; duration and distance not compared yet. Rides older than 100 most recent are not checked remotely (ledger covers them).
+- Goal 2, quality. Partial. Done: DownloadFit JSON injection fixed (json.Marshal). Missing: `docs/audit.md`, security fixes (`DownloadFit` builds JSON with `fmt.Sprintf`, use `json.Marshal`), watch `seen` map growth, goroutine/leak check, README, AGENTS.md update.
 
 ## Commands
 
