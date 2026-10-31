@@ -234,9 +234,12 @@ func (c *Client) DownloadFit(ctx context.Context, fileID string) ([]byte, error)
 	if c.token == "" {
 		return nil, fmt.Errorf("not authenticated")
 	}
-	payload := fmt.Sprintf(`{"fileId":"%s"}`, fileID)
+	payload, err := json.Marshal(map[string]string{"fileId": fileID})
+	if err != nil {
+		return nil, fmt.Errorf("marshal download payload: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.opts.ActivitiesURL+"rider/profile/download-activity-file", strings.NewReader(payload))
+		c.opts.ActivitiesURL+"rider/profile/download-activity-file", strings.NewReader(string(payload)))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}

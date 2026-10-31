@@ -3,6 +3,7 @@ package mywhoosh
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -198,5 +199,31 @@ func TestParsedStart(t *testing.T) {
 	a = &Activity{Date: 1700000000}
 	if got := a.ParsedStart(); got.Unix() != 1700000000 {
 		t.Errorf("fallback start = %d", got.Unix())
+	}
+}
+
+func TestDownloadFitEscapesFileID(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rider/profile/download-activity-file" {
+			gotBody, _ = io.ReadAll(r.Body)
+			_, _ = w.Write([]byte(`{"data":"` + "http://" + r.Host + `/f.fit"}`))
+			return
+		}
+		_, _ = w.Write([]byte("fit"))
+	}))
+	defer srv.Close()
+	c := New(Options{ActivitiesURL: srv.URL + "/", HTTPClient: srv.Client()})
+	c.token = "tok"
+	fileID := `a","x":"b`
+	if _, err := c.DownloadFit(context.Background(), fileID); err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(gotBody, &body); err != nil {
+		t.Fatalf("payload not valid JSON: %v (%s)", err, gotBody)
+	}
+	if body["fileId"] != fileID {
+		t.Errorf("fileId = %q, want %q", body["fileId"], fileID)
 	}
 }
