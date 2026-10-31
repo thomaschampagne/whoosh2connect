@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -15,6 +16,7 @@ import (
 	"whoosh2connect/internal/app"
 	"whoosh2connect/internal/garmin"
 	"whoosh2connect/internal/mywhoosh"
+	"whoosh2connect/internal/notify"
 )
 
 // Service is the slice of app.Service the TUI needs.
@@ -26,6 +28,7 @@ type Service interface {
 	Upload(ctx context.Context, act mywhoosh.Activity) app.UploadResult
 	UploadPending(ctx context.Context, sessions []app.Session, report func(mywhoosh.Activity, app.UploadResult))
 	SaveSpoofed(ctx context.Context, act mywhoosh.Activity, dir string) (string, error)
+	Watch(ctx context.Context, sc app.RideScanner, interval time.Duration, n notify.Notifier, out chan<- app.WatchEvent)
 }
 
 type screen int
@@ -50,15 +53,19 @@ type Options struct {
 	SpoofDir string
 	// OpenDir opens a folder in the file manager.
 	OpenDir func(path string) error
+	// Watch configures auto-watch of the ride folder.
+	Watch WatchOptions
 }
 
 // Model is the Bubble Tea state machine.
 type Model struct {
-	svc      Service
-	ctx      context.Context
-	settings Settings
-	saveFn   func(Settings) error
-	th       theme
+	svc       Service
+	ctx       context.Context
+	settings  Settings
+	saveFn    func(Settings) error
+	th        theme
+	watchOpts WatchOptions
+	watch     *watchRun
 
 	screen  screen
 	cursor  int
@@ -105,6 +112,7 @@ func New(opts Options) Model {
 		mouseOn:  true,
 		spoofDir: opts.SpoofDir,
 		openDir:  opts.OpenDir,
+		watchOpts: opts.Watch,
 	}
 	if opts.Context == nil {
 		m.ctx = context.Background()
@@ -264,6 +272,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = screenList
 		m.page = 0
 		m.logf(logSuccess, "loaded %d session(s)", len(msg.sessions))
+		if m.watchOpts.Enabled && m.watch == nil {
+			cmds = append(cmds, m.startWatchCmd())
+		}
 		m.clampCursor()
 		m.clampPage()
 
@@ -288,6 +299,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = m.th.paint("saved "+msg.path, m.th.success)
 			m.logf(logInfo, "saved spoofed %s to %s", msg.id, msg.path)
 		}
+
+	case watchStartedMsg:
+		cmds = append(cmds, m.startedWatch(msg.run))
+
+	case watchEventMsg:
+		cmds = append(cmds, m.applyWatchEvent(msg.run, msg.ev))
+
+	case watchStoppedMsg:
+		m.stoppedWatch(msg.run)
+
+	case watchFailedMsg:
+		m.failedWatch(msg.err)
 
 	case batchStepMsg:
 		b := m.batch
@@ -479,6 +502,8 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 		m.form.setWidth(m.innerW())
 		m.screen = screenSettings
 		cmds = append(cmds, m.form.focusField(0))
+	case "t":
+		cmds = append(cmds, m.toggleWatch())
 	case "w":
 		if s := m.selected(); s != nil {
 			m.logf(logInfo, "saving spoofed FIT for %s", s.ID)

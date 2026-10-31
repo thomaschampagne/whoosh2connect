@@ -371,6 +371,7 @@ func (m Model) helpLines() []string {
 		"  preview ride    enter",
 		"  upload ride     u",
 		"  upload all      a",
+		"  auto-watch      t",
 		"  refresh         r",
 		"  settings        s",
 		"  logs            l",
@@ -428,7 +429,10 @@ func (m Model) renderHint() string {
 	case m.screen == screenPreview:
 		hint = "u upload · esc back · q quit"
 	default:
-		hint = "? help · q quit · ↑/↓ move · enter preview · u upload · a upload-all · w save FIT · o spoof dir · m mouse · s settings · l logs · r refresh"
+		hint = "? help · q quit · ↑/↓ move · enter preview · u upload · a upload-all · t auto-watch · w save FIT · o spoof dir · m mouse · s settings · l logs · r refresh"
+	}
+	if m.watch != nil && !m.showHelp && !m.showLog {
+		return clip("  "+th.paint("● watching", th.success)+th.dim(" · "+hint), m.innerW())
 	}
 	return clip("  "+th.dim(hint), m.innerW())
 }
