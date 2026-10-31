@@ -55,6 +55,7 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 	deviceName := conf.String("device-name", "", "override device name")
 	deviceSerial := conf.Uint("device-serial", 0, "override device serial (non-zero uint32)")
 	noTUI := conf.Bool("no-tui", false, "sync headless and exit")
+	dryRun := conf.Bool("dry-run", false, "headless: print what would upload or skip, change nothing")
 	showVersion := conf.Bool("version", false, "print version and exit")
 	watchDir := conf.String("watch", "", `watch local MyWhoosh dir for new rides and auto-upload; "auto" discovers it`)
 	watchInterval := conf.Int("watch-interval", 10, "seconds between scans in watch mode")
@@ -146,7 +147,7 @@ func run(args []string, stdin *os.File, stdout, stderr *os.File) int {
 	}
 
 	if *noTUI {
-		return headless(cfg, svc, stdin, stdout, stderr)
+		return headless(cfg, svc, *dryRun, stdin, stdout, stderr)
 	}
 
 	p := tea.NewProgram(
@@ -228,7 +229,7 @@ func buildService(paths config.Paths, dev device.Device) (*app.Service, error) {
 }
 
 // headless performs one full sync without the TUI.
-func headless(cfg config.Config, svc *app.Service, stdin *os.File, stdout, stderr *os.File) int {
+func headless(cfg config.Config, svc *app.Service, dryRun bool, stdin *os.File, stdout, stderr *os.File) int {
 	if cfg.MyWhoosh.Email == "" || cfg.Garmin.Email == "" {
 		write(stderr, "headless mode needs --mywhoosh-email and --garmin-email")
 		return 1
@@ -257,6 +258,10 @@ func headless(cfg config.Config, svc *app.Service, stdin *os.File, stdout, stder
 		return 0
 	}
 
+	if dryRun {
+		return planSessions(ctx, svc, sessions, stdout, stderr)
+	}
+
 	for _, s := range sessions {
 		if s.Uploaded {
 			write(stdout, "skip   %s (already synced)\n", s.ID)
@@ -268,6 +273,23 @@ func headless(cfg config.Config, svc *app.Service, stdin *os.File, stdout, stder
 			write(stdout, "  %v\n", res.Err)
 			return 1
 		}
+	}
+	return 0
+}
+
+// planSessions prints the dry-run decision for each session and uploads nothing.
+func planSessions(ctx context.Context, svc *app.Service, sessions []app.Session, stdout, stderr *os.File) int {
+	for _, s := range sessions {
+		d, err := svc.Plan(ctx, s.Activity)
+		if err != nil {
+			write(stderr, "plan %s: %v\n", s.ID, err)
+			return 1
+		}
+		if d.Action == app.ActionUpload {
+			write(stdout, "would upload %s\n", s.ID)
+			continue
+		}
+		write(stdout, "would skip   %s (%s)\n", s.ID, d.Reason)
 	}
 	return 0
 }
