@@ -91,7 +91,7 @@ Date: 2026-10-31. Scope: all Go packages, read in full for `internal/app`, `inte
 | D3 | FIXED | Upload confirmed but ledger write failed: status stays `uploaded`, warning in `Err`. Test: read-only ledger dir. |
 | D4 | FIXED | Cross-process lock, reload before every write. |
 | D5 | FIXED | In-flight set per ride ID. Test: concurrent upload of the same ride is skipped. |
-| D6 | OPEN | Remote match compares start time only. Duration and distance not compared: `MyWhoosh.RideDuration` format is not verified against a real response. Needs one sample. |
+| D6 | CLOSED, by design | `rideDuration` format is `HH:MM:SS.mmm` (checked on one real sample: `totalWorkout` in kJ matches watts × duration). Garmin list gives `duration` in seconds. Not used as a match criterion: a small duration difference would cause a missed match and a duplicate upload. Start time stays the only remote key. |
 | D7 | FIXED | Ledger hash check survives restarts. |
 | G1 | FIXED | TUI uploads use a context cancelled on exit. |
 | G2 | VERIFIED | Watch loop only waits on `ctx.Done()` or a timer. No goroutines spawned. |
