@@ -236,8 +236,8 @@ func TestListActivitiesStopsAtPageCap(t *testing.T) {
 	}))
 	c.token = "abc"
 	acts, err := c.ListActivities(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("want truncation error when pages remain")
 	}
 	if calls != maxActivityPages {
 		t.Errorf("requests = %d, want cap %d", calls, maxActivityPages)

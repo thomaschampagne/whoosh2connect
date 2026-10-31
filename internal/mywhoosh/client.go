@@ -191,6 +191,7 @@ func (c *Client) ListActivities(ctx context.Context) ([]Activity, error) {
 		return nil, fmt.Errorf("not authenticated")
 	}
 	var all []Activity
+	totalPages := 0
 	for page := 1; page <= maxActivityPages; page++ {
 		payload := fmt.Sprintf(`{"sortDate":"DESC","page":%d}`, page)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -233,6 +234,10 @@ func (c *Client) ListActivities(ctx context.Context) ([]Activity, error) {
 		if page >= result.Data.TotalPages {
 			break
 		}
+		totalPages = result.Data.TotalPages
+	}
+	if totalPages > maxActivityPages {
+		return all, fmt.Errorf("activity list truncated: %d of %d pages read", maxActivityPages, totalPages)
 	}
 	return all, nil
 }
