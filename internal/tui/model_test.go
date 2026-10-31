@@ -176,8 +176,9 @@ func TestUploadAllConfirm(t *testing.T) {
 		t.Fatalf("screen = %v", m.screen)
 	}
 	cmd := upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
-	mMsg := cmd().(uploadMsg)
-	upd(t, &m, mMsg)
+	for cmd != nil {
+		cmd = upd(t, &m, cmd())
+	}
 	if f.uploads != 2 {
 		t.Fatalf("uploads = %d, want 2", f.uploads)
 	}
@@ -325,5 +326,33 @@ func TestListFooterShowsNewShortcuts(t *testing.T) {
 		if !strings.Contains(hint, want) {
 			t.Errorf("footer %q missing %q", hint, want)
 		}
+	}
+}
+
+func TestUploadAllReportsEachRide(t *testing.T) {
+	f := &fakeService{}
+	m := New(Options{Service: f})
+	m.screen = screenList
+	m.sessions = []app.Session{session("1"), session("2"), session("3")}
+	m.sessions[1].Uploaded = true
+
+	cmd := m.startBatch()
+	steps := 0
+	for cmd != nil {
+		msg := cmd()
+		steps++
+		if _, ok := msg.(batchStepMsg); !ok {
+			t.Fatalf("msg = %T, want batchStepMsg", msg)
+		}
+		cmd = upd(t, &m, msg)
+	}
+	if steps != 2 {
+		t.Fatalf("steps = %d, want 2 (already synced ride skipped)", steps)
+	}
+	if m.batch != nil || m.uploading != 0 {
+		t.Fatalf("batch not cleared: batch=%v uploading=%d", m.batch, m.uploading)
+	}
+	if !strings.Contains(m.status, "upload all done") {
+		t.Fatalf("status = %q, want summary", m.status)
 	}
 }

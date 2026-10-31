@@ -71,6 +71,7 @@ type Model struct {
 	mfaInput      textinput.Model
 	uploading     int
 	uploadingName string
+	batch         *batchRun
 
 	showHelp bool
 	showLog  bool
@@ -288,6 +289,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logf(logInfo, "saved spoofed %s to %s", msg.id, msg.path)
 		}
 
+	case batchStepMsg:
+		b := m.batch
+		if b == nil {
+			break
+		}
+		b.done++
+		switch msg.res.Status {
+		case app.StatusUploaded, app.StatusDuplicate:
+			b.uploaded++
+		case app.StatusSkipped:
+			b.skipped++
+		default:
+			b.failed++
+		}
+		text := resLabel(msg.res)
+		m.results[msg.act.ID] = text
+		m.logf(resultLevel(msg.res), "upload %s: %s", msg.act.DisplayName(), text)
+		if len(b.queue) > 0 {
+			cmds = append(cmds, m.nextInBatch())
+		} else {
+			m.finishBatch()
+		}
+
 	case uploadMsg:
 		if m.uploading > 0 {
 			m.uploading--
@@ -359,8 +383,7 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "y", "enter":
 			m.screen = screenList
-			m.logf(logInfo, "uploading %d pending ride(s)", m.confirm)
-			return m, m.uploadAllCmd()
+			return m, m.startBatch()
 		case "n", "esc":
 			m.screen = screenList
 		}
@@ -533,7 +556,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	case screenConfirm:
 		m.screen = screenList
-		cmds = append(cmds, m.uploadAllCmd())
+		cmds = append(cmds, m.startBatch())
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -648,15 +671,63 @@ func (m *Model) startUpload(s *app.Session) tea.Cmd {
 	return m.uploadCmd(s.Activity)
 }
 
-func (m Model) uploadAllCmd() tea.Cmd {
-	sessions := append([]app.Session(nil), m.sessions...)
-	return func() tea.Msg {
-		var last app.UploadResult
-		m.svc.UploadPending(m.ctx, sessions, func(_ mywhoosh.Activity, res app.UploadResult) {
-			last = res
-		})
-		return uploadMsg{id: "batch", res: last}
+// batchRun is an "upload all" in progress. Rides go one at a time, so the
+// UI can show progress and the list updates as each ride finishes.
+type batchRun struct {
+	queue                     []app.Session
+	total                     int
+	done                      int
+	uploaded, skipped, failed int
+}
+
+// batchStepMsg reports the outcome of one ride in a batch.
+type batchStepMsg struct {
+	act mywhoosh.Activity
+	res app.UploadResult
+}
+
+// startBatch queues every ride not yet synced and starts the first one.
+func (m *Model) startBatch() tea.Cmd {
+	var queue []app.Session
+	for _, s := range m.sessions {
+		if !s.Uploaded {
+			queue = append(queue, s)
+		}
 	}
+	if len(queue) == 0 {
+		m.status = m.th.paint("nothing to upload, all rides synced", m.th.secondary)
+		return nil
+	}
+	m.batch = &batchRun{queue: queue, total: len(queue)}
+	m.uploading++
+	m.logf(logInfo, "uploading %d pending ride(s)", len(queue))
+	return m.nextInBatch()
+}
+
+// nextInBatch uploads the head of the queue. The ride is removed from the
+// queue here so a second batch step cannot pick it up twice.
+func (m *Model) nextInBatch() tea.Cmd {
+	b := m.batch
+	act := b.queue[0].Activity
+	b.queue = b.queue[1:]
+	name := act.DisplayName()
+	m.uploadingName = fmt.Sprintf("%d/%d %s", b.done+1, b.total, name)
+	ctx := m.ctx
+	svc := m.svc
+	return func() tea.Msg {
+		return batchStepMsg{act: act, res: svc.Upload(ctx, act)}
+	}
+}
+
+// finishBatch clears batch state and reports the totals in the status line.
+func (m *Model) finishBatch() {
+	b := m.batch
+	m.batch = nil
+	m.uploading--
+	m.uploadingName = ""
+	summary := fmt.Sprintf("upload all done: %d uploaded, %d skipped, %d failed", b.uploaded, b.skipped, b.failed)
+	m.status = m.th.paint(summary, m.th.secondary)
+	m.logf(logInfo, "%s", summary)
 }
 
 func (m Model) selected() *app.Session {
