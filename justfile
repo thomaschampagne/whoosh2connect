@@ -11,9 +11,9 @@ ldflags := "-s -w -X whoosh2connect/internal/version.Version=" + version + " -X 
 build:
     go build -ldflags "{{ldflags}}" -o bin/{{binary}} ./cmd/{{binary}}
 
-# run the CLI (pass args after --, e.g. just run -- --version)
-run *args:
-    go run ./cmd/{{binary}} {{args}}
+# run the CLI from bin/ so the log lands next to the binary (e.g. just run --version)
+run *args: build
+    ./bin/{{binary}} {{args}}
 
 # run the test suite
 test:
