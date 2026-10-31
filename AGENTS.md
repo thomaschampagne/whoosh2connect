@@ -12,12 +12,12 @@ See `MISSION.md` for the original brief and `README.md` for user-facing docs.
 ## Layout
 
 ```
-cmd/whoosh2connect/   thin main: flags, wiring, headless mode, TUI launch
+cmd/whoosh2connect/   thin main: flags, wiring, headless mode, watch loop, TUI launch
 internal/config/      YAML + env + flags (precedence: flags > env > file > defaults), XDG paths
 internal/device/      Edge presets (product IDs from the Garmin FIT SDK), serial gen/validate, apply to FIT
 internal/fit/         port of fitfix.go: fill session averages, strip temperature, spoof device
 internal/mywhoosh/    MyWhoosh API client (login, list, download, page cap) + token cache
-internal/garmin/      token store (0600), mobile SSO + MFA, client (upload, refresh)
+internal/garmin/      token store (0600), mobile SSO + MFA, upload client, activity list for remote match
 internal/state/       sync ledger (JSON, cross-process lock, atomic writes)
 internal/fsutil/      atomic 0600 file writes
 internal/httpx/       bounded response reads, short error snippets
@@ -25,9 +25,12 @@ internal/logx/        slog file logger with secret redaction
 internal/watch/       local FIT directory watcher (hash cache, stable scans)
 internal/notify/      system notifications behind a small interface
 internal/app/         upload pipeline shared by API and watch paths; ledger guards; verify
-internal/garmin/      also: activity list for remote match (activities.go)
 internal/tui/         Bubble Tea model, views, settings, MFA screen
+internal/release/     Scoop manifest rendering tests
 internal/version/     build-time version/commit
+bucket/               Scoop manifest, regenerated on every release
+docs/                 design docs, plans, audit
+.github/workflows/    CI (just ci) and release (semantic-release + bucket job)
 ```
 ## Agent communication style
 
@@ -50,20 +53,26 @@ Reply in caveman mode (terse, fragments, no filler/preamble/postamble). Exact va
 ## Commands
 
 ```
-just build     # build dist/whoosh2connect with version ldflags
-just test      # go test ./...
-just vet       # go vet ./...
+just build     # dist/whoosh2connect with version/commit ldflags
+just test      # go test -race ./...
+just vet       # go vet ./... and GOOS=windows go vet ./...
 just lint      # golangci-lint run
 just fmt       # gofmt -s -w .
+just fmt-check # check-only formatting (what CI runs)
 just tidy      # go mod tidy
-just run -- --flags  # go run ./cmd/whoosh2connect
-go test -race ./...  # race detector; required before calling work done
+just ci        # check-only: fmt-check, vet, lint, test, build
+just sanity    # local: fmt, test, vet, build
+just release 1.2.3                  # all platforms into dist/ + checksums.txt
+just scoop-manifest 1.2.3 <sha256>  # render bucket/whoosh2connect.json
+just clean     # rm -rf bin dist
+just update-deps
+just run -- --flags  # build then run dist/whoosh2connect
 go run ./cmd/whoosh2connect --no-tui --dry-run   # preview sync decisions
 go run ./cmd/whoosh2connect --verify            # ledger vs Garmin, read only
 ```
 
-Always run `gofmt -s -w`, `go vet ./...`, `go test ./...`, and
-`golangci-lint run` before considering work done.
+Always run `gofmt -s -w .`, `go vet ./...`, `GOOS=windows go vet ./...`,
+`go test -race ./...`, and `golangci-lint run` before considering work done.
 
 ## Conventions
 
