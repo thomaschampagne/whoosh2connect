@@ -67,12 +67,32 @@ func (c *Client) listActivities(ctx context.Context, start, limit int) ([]Recent
 			return nil, fmt.Errorf("token refresh: %w", err)
 		}
 	}
+	status, body, err := c.doListActivities(ctx, start, limit)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusUnauthorized {
+		if err := c.refreshOAuth2(ctx); err != nil {
+			return nil, fmt.Errorf("token refresh: %w", err)
+		}
+		status, body, err = c.doListActivities(ctx, start, limit)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if status >= 400 {
+		return nil, fmt.Errorf("list activities failed (HTTP %d): %s", status, httpx.Snippet(body))
+	}
+	return parseActivities(body)
+}
+
+func (c *Client) doListActivities(ctx context.Context, start, limit int) (int, []byte, error) {
 	host := c.resolveHosts()
 	u := fmt.Sprintf("%s/activitylist-service/activities/search/activities?start=%d&limit=%d",
 		host.connectAPI, start, limit)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, fmt.Errorf("create activities request: %w", err)
+		return 0, nil, fmt.Errorf("create activities request: %w", err)
 	}
 	req.Header.Set("Authorization", c.OAuth2.Bearer())
 	req.Header.Set("User-Agent", apiUserAgent)
@@ -81,17 +101,14 @@ func (c *Client) listActivities(ctx context.Context, start, limit int) ([]Recent
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("activities request: %w", err)
+		return 0, nil, fmt.Errorf("activities request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := httpx.ReadBody(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read activities: %w", err)
+		return 0, nil, fmt.Errorf("read activities: %w", err)
 	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("list activities failed (HTTP %d): %s", resp.StatusCode, httpx.Snippet(body))
-	}
-	return parseActivities(body)
+	return resp.StatusCode, body, nil
 }
 
 func parseActivities(body []byte) ([]RecentActivity, error) {

@@ -111,3 +111,15 @@ func fullPage() string {
 	}
 	return "[" + strings.Join(items, ",") + "]"
 }
+
+func TestListActivitiesUnauthorizedTriesRefresh(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	c := newTestClient(srv.URL)
+	_, _, err := c.FindMatch(context.Background(), time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	if err == nil || !strings.Contains(err.Error(), "token refresh") {
+		t.Fatalf("err = %v, want token refresh attempt on 401", err)
+	}
+}
