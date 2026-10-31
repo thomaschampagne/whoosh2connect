@@ -1,8 +1,11 @@
 package state
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -72,21 +75,36 @@ func TestLookups(t *testing.T) {
 }
 
 func TestStaleUploadingResolvedOnOpen(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
-	s, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name       string
+		age        time.Duration
+		wantStatus Status
+	}{
+		{"fresh upload left alone", time.Minute, StatusUploading},
+		{"old upload marked failed", 2 * staleAfter, StatusFailed},
 	}
-	if err := s.Put(Entry{ID: "a1", Hash: "h1", Status: StatusUploading}); err != nil {
-		t.Fatal(err)
-	}
-	s2, err := Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, _ := s2.ByID("a1")
-	if got.Status != StatusFailed || got.LastError == "" {
-		t.Fatalf("stale entry = %+v, want failed with reason", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state.json")
+			old := file{Version: schemaVersion, Entries: map[string]Entry{
+				"a1": {ID: "a1", Hash: "h1", Status: StatusUploading, UpdatedAt: time.Now().Add(-tt.age)},
+			}}
+			data, err := json.Marshal(old)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _ := s.ByID("a1")
+			if got.Status != tt.wantStatus {
+				t.Fatalf("status = %q, want %q", got.Status, tt.wantStatus)
+			}
+		})
 	}
 }
 
@@ -140,4 +158,103 @@ func mustOpen(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	return s
+}
+
+func TestTwoStoresDoNotLoseEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	a, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Put(Entry{ID: "a1", Status: StatusUploaded}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Put(Entry{ID: "b1", Status: StatusUploaded}); err != nil {
+		t.Fatal(err)
+	}
+	final, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a1", "b1"} {
+		if _, ok := final.ByID(id); !ok {
+			t.Errorf("entry %s lost after concurrent writers", id)
+		}
+	}
+}
+
+func TestConcurrentWritersAcrossStores(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	const perStore = 15
+	var wg sync.WaitGroup
+	for s := 0; s < 2; s++ {
+		st, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < perStore; i++ {
+			wg.Add(1)
+			go func(st *Store, id string) {
+				defer wg.Done()
+				if err := st.Put(Entry{ID: id, Status: StatusUploaded}); err != nil {
+					t.Error(err)
+				}
+			}(st, fmt.Sprintf("s%d-%d", s, i))
+		}
+	}
+	wg.Wait()
+	final, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(final.byID); got != 2*perStore {
+		t.Fatalf("entries = %d, want %d", got, 2*perStore)
+	}
+}
+
+func TestPutDoesNotResolveOtherProcessUploading(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	owner, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.Put(Entry{ID: "x", Status: StatusUploading}); err != nil {
+		t.Fatal(err)
+	}
+	if err := other.Put(Entry{ID: "y", Status: StatusUploaded}); err != nil {
+		t.Fatal(err)
+	}
+	final, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := final.ByID("x"); e.Status == StatusFailed {
+		t.Fatal("in-flight upload of another process was marked failed")
+	}
+}
+
+func TestLockFileMode0600(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(Entry{ID: "a1", Status: StatusUploaded}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("lock perm = %o, want no group/other access", perm)
+	}
 }

@@ -1,6 +1,10 @@
 // Package state is the sync ledger. It records every ride the tool has touched,
 // keyed by MyWhoosh activity ID and by the SHA-256 of the spoofed FIT, so a ride
 // is uploaded to Garmin Connect at most once.
+//
+// Several processes (TUI, CLI, watch) may share one ledger file. Every write
+// takes an exclusive lock, reloads the file, applies the change, and writes
+// atomically, so no process overwrites another's entries.
 package state
 
 import (
@@ -10,6 +14,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 // Status is the lifecycle state of one ride in the ledger.
@@ -24,7 +30,10 @@ const (
 	StatusFailed     Status = "failed"
 )
 
-const schemaVersion = 2
+const (
+	schemaVersion = 2
+	staleAfter    = 15 * time.Minute
+)
 
 // Entry is one ride in the ledger.
 type Entry struct {
@@ -41,7 +50,8 @@ type file struct {
 	Entries map[string]Entry `json:"entries"`
 }
 
-// Store is a JSON-backed ledger safe for concurrent use.
+// Store is a JSON-backed ledger safe for concurrent use within a process and
+// across processes sharing the same file.
 type Store struct {
 	mu     sync.Mutex
 	path   string
@@ -55,12 +65,23 @@ func Open(path string) (*Store, error) {
 	if path == "" {
 		return nil, fmt.Errorf("state file path is empty")
 	}
-	s := &Store{path: path, byID: map[string]Entry{}, byHash: map[string]string{}}
+	s := &Store{path: path}
+	s.setEntries(map[string]Entry{})
 	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		if err := s.load(data); err != nil {
+		entries, legacy, err := decode(data)
+		if err != nil {
 			return nil, fmt.Errorf("parse state %s: %w", path, err)
+		}
+		s.setEntries(entries)
+		if legacy {
+			if err := s.persistLocked(); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.withLock(s.resolveStale); err != nil {
+			return nil, err
 		}
 	case os.IsNotExist(err):
 		if err := s.persistLocked(); err != nil {
@@ -72,37 +93,51 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-func (s *Store) load(data []byte) error {
+// decode parses a v2 ledger, or a v1 map of ID to RFC3339 time (legacy = true).
+func decode(data []byte) (entries map[string]Entry, legacy bool, err error) {
 	var f file
-	if err := json.Unmarshal(data, &f); err == nil && f.Version == schemaVersion {
-		for id, e := range f.Entries {
-			s.index(id, e)
+	if json.Unmarshal(data, &f) == nil && f.Version == schemaVersion {
+		if f.Entries == nil {
+			f.Entries = map[string]Entry{}
 		}
-		return s.resolveStale()
+		return f.Entries, false, nil
 	}
 	var v1 map[string]string
 	if err := json.Unmarshal(data, &v1); err != nil {
-		return err
+		return nil, false, err
 	}
+	entries = make(map[string]Entry, len(v1))
 	for id, raw := range v1 {
 		at, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
 			at = time.Now()
 		}
-		s.index(id, Entry{ID: id, Status: StatusUploaded, UpdatedAt: at})
+		entries[id] = Entry{ID: id, Status: StatusUploaded, UpdatedAt: at}
 	}
-	return s.persistLocked()
+	return entries, true, nil
 }
 
-// resolveStale marks uploads interrupted by a crash as failed. They are not
-// retried blindly; the remote check decides before any new upload.
+func (s *Store) setEntries(entries map[string]Entry) {
+	s.byID = make(map[string]Entry, len(entries))
+	s.byHash = make(map[string]string, len(entries))
+	for id, e := range entries {
+		s.index(id, e)
+	}
+}
+
+// resolveStale marks uploads that never reported back as failed. An upload is
+// stale only after staleAfter, far longer than the Garmin HTTP timeout, so an
+// upload still in flight in another process is never touched. Stale entries
+// are not retried blindly; the remote check decides before any new upload.
+// Runs under the file lock after a reload.
 func (s *Store) resolveStale() error {
 	dirty := false
+	now := time.Now()
 	for id, e := range s.byID {
-		if e.Status == StatusUploading {
+		if e.Status == StatusUploading && now.Sub(e.UpdatedAt) > staleAfter {
 			e.Status = StatusFailed
 			e.LastError = "interrupted before confirmation"
-			e.UpdatedAt = time.Now()
+			e.UpdatedAt = now
 			s.index(id, e)
 			dirty = true
 		}
@@ -111,6 +146,20 @@ func (s *Store) resolveStale() error {
 		return nil
 	}
 	return s.persistLocked()
+}
+
+// withLock runs fn holding the cross-process file lock, with the in-memory
+// view reloaded from disk first.
+func (s *Store) withLock(fn func() error) error {
+	lock := flock.New(s.path + ".lock")
+	if err := lock.Lock(); err != nil {
+		return fmt.Errorf("lock state: %w", err)
+	}
+	defer func() { _ = lock.Unlock() }()
+	if err := s.reloadLocked(); err != nil {
+		return err
+	}
+	return fn()
 }
 
 func (s *Store) index(id string, e Entry) {
@@ -143,13 +192,33 @@ func (s *Store) ByHash(hash string) (Entry, bool) {
 	return s.byID[id], true
 }
 
-// Put inserts or replaces an entry and persists the ledger atomically.
+// Put inserts or replaces an entry. It holds the file lock across reload,
+// update, and write, so entries written by other processes are kept.
 func (s *Store) Put(e Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e.UpdatedAt = time.Now()
-	s.index(e.ID, e)
-	return s.persistLocked()
+	return s.withLock(func() error {
+		e.UpdatedAt = time.Now()
+		s.index(e.ID, e)
+		return s.persistLocked()
+	})
+}
+
+func (s *Store) reloadLocked() error {
+	data, err := os.ReadFile(s.path)
+	if os.IsNotExist(err) {
+		s.setEntries(map[string]Entry{})
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read state %s: %w", s.path, err)
+	}
+	entries, _, err := decode(data)
+	if err != nil {
+		return fmt.Errorf("parse state %s: %w", s.path, err)
+	}
+	s.setEntries(entries)
+	return nil
 }
 
 func (s *Store) persistLocked() error {
