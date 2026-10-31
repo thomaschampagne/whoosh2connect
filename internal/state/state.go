@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -44,6 +45,7 @@ type Entry struct {
 	Status    Status    `json:"status"`
 	GarminID  string    `json:"garmin_id,omitempty"`
 	LastError string    `json:"last_error,omitempty"`
+	Start     time.Time `json:"start,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -232,4 +234,16 @@ func (s *Store) persistLocked() error {
 		return fmt.Errorf("marshal state: %w", err)
 	}
 	return fsutil.WriteFileAtomic(s.path, data, 0o600)
+}
+
+// Entries returns a snapshot of every ride in the ledger, sorted by ID.
+func (s *Store) Entries() []Entry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Entry, 0, len(s.byID))
+	for _, e := range s.byID {
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
