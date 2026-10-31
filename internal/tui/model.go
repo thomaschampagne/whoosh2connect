@@ -69,6 +69,7 @@ type Model struct {
 	showHelp bool
 	showLog  bool
 	logs     logBuffer
+	mouseOn  bool
 
 	width  int
 	height int
@@ -92,6 +93,7 @@ func New(opts Options) Model {
 		th:       th,
 		results:  make(map[string]string),
 		screen:   screenLoading,
+		mouseOn:  true,
 	}
 	if opts.Context == nil {
 		m.ctx = context.Background()
@@ -360,6 +362,15 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 		m.showHelp = !m.showHelp
 	case "l":
 		m.toggleLogs()
+	case "m":
+		m.mouseOn = !m.mouseOn
+		if m.mouseOn {
+			m.logf(logInfo, "mouse on: scroll and click enabled")
+			cmds = append(cmds, tea.EnableMouseCellMotion)
+		} else {
+			m.logf(logInfo, "mouse off: select and copy text with the terminal")
+			cmds = append(cmds, tea.DisableMouse)
+		}
 	case "up", "k":
 		if m.movingLogs() {
 			m.scrollLogs(1)

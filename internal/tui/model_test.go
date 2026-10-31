@@ -282,3 +282,17 @@ func (f *fakeService) UploadPending(ctx context.Context, sessions []app.Session,
 		report(s.Activity, f.Upload(ctx, s.Activity))
 	}
 }
+
+func TestMouseToggleKey(t *testing.T) {
+	m := New(Options{Service: &fakeService{}})
+	if !m.mouseOn {
+		t.Fatal("mouse should start on")
+	}
+	m.screen = screenList
+	if cmd := upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}); cmd == nil || m.mouseOn {
+		t.Fatalf("first m: mouseOn = %v, want off with a disable cmd", m.mouseOn)
+	}
+	if cmd := upd(t, &m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}}); cmd == nil || !m.mouseOn {
+		t.Fatalf("second m: mouseOn = %v, want on with an enable cmd", m.mouseOn)
+	}
+}
