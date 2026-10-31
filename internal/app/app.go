@@ -37,6 +37,7 @@ const (
 	ReasonLedgerHash  = "ledger hit: fit hash"
 	ReasonRemoteMatch = "garmin match: start time"
 	ReasonInFlight    = "already uploading"
+	ReasonNoStart     = "no start time, cannot check Garmin"
 )
 
 // Dry-run actions.
@@ -223,7 +224,11 @@ func (s *Service) Plan(ctx context.Context, act mywhoosh.Activity) (Decision, er
 	if s.Remote == nil {
 		return Decision{Action: ActionUpload}, nil
 	}
-	_, found, err := s.Remote.FindMatch(ctx, act.ParsedStart())
+	start := act.ParsedStart()
+	if start.IsZero() {
+		return Decision{Action: ActionSkip, Reason: ReasonNoStart}, nil
+	}
+	_, found, err := s.Remote.FindMatch(ctx, start)
 	if err != nil {
 		return Decision{}, fmt.Errorf("remote check: %w", err)
 	}
@@ -240,6 +245,9 @@ func (s *Service) Verify(ctx context.Context) ([]Finding, error) {
 		return nil, fmt.Errorf("remote check not configured")
 	}
 	var out []Finding
+	if err := s.Store.Refresh(); err != nil {
+		return nil, fmt.Errorf("reload ledger: %w", err)
+	}
 	for _, e := range s.Store.Entries() {
 		if e.Status != state.StatusUploaded {
 			continue
@@ -393,6 +401,11 @@ func (s *Service) fail(id, hash string, start time.Time, err error) UploadResult
 // recordFailure stores the failure in the ledger and returns err, or the
 // ledger error if that also fails.
 func (s *Service) recordFailure(id, hash string, start time.Time, err error) error {
+	if hash == "" {
+		if prev, ok := s.Store.ByID(id); ok {
+			hash = prev.Hash
+		}
+	}
 	if merr := s.Store.Put(state.Entry{ID: id, Hash: hash, Start: start, Status: state.StatusFailed, LastError: err.Error()}); merr != nil {
 		return fmt.Errorf("%w (ledger: %v)", err, merr)
 	}

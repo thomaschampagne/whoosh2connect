@@ -238,6 +238,12 @@ func (s *Store) persistLocked() error {
 	return fsutil.WriteFileAtomic(s.path, data, 0o600)
 }
 
+// Refresh reloads the ledger from disk under the cross-process lock, so reads
+// see entries written by other processes.
+func (s *Store) Refresh() error {
+	return s.withLock(func() error { return nil })
+}
+
 // Entries returns a snapshot of every ride in the ledger, sorted by ID.
 func (s *Store) Entries() []Entry {
 	s.mu.Lock()

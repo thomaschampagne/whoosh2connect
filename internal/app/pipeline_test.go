@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -212,5 +213,38 @@ func TestUploadWithoutStartTimeFailsClosed(t *testing.T) {
 	}
 	if g.uploads != 0 {
 		t.Fatalf("uploads = %d, want 0", g.uploads)
+	}
+}
+
+func TestPlanWithoutStartTimeSkips(t *testing.T) {
+	svc := newService(t, &fakeMyWhoosh{}, &fakeGarmin{})
+	svc.Remote = &fakeRemote{}
+	d, err := svc.Plan(context.Background(), mywhoosh.Activity{ID: "a1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Action != ActionSkip || d.Reason != ReasonNoStart {
+		t.Fatalf("decision = %+v, want skip no-start", d)
+	}
+}
+
+func TestFailureKeepsKnownHash(t *testing.T) {
+	st, err := state.Open(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Put(state.Entry{ID: "a1", Hash: "abc", Status: state.StatusUploading}); err != nil {
+		t.Fatal(err)
+	}
+	svc := New(&fakeMyWhoosh{}, &fakeGarmin{}, st, testDeviceValue(), nil)
+	res := svc.run(context.Background(), "a1", time.Time{}, func(context.Context) ([]byte, error) {
+		return nil, errors.New("download timeout")
+	})
+	if res.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed", res.Status)
+	}
+	e, _ := st.ByID("a1")
+	if e.Hash != "abc" {
+		t.Fatalf("hash = %q, want abc kept", e.Hash)
 	}
 }

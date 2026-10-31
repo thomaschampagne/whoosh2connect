@@ -452,7 +452,7 @@ func TestPlan(t *testing.T) {
 			if tt.remote != nil {
 				svc.Remote = tt.remote
 			}
-			d, err := svc.Plan(context.Background(), mywhoosh.Activity{ID: "a1"})
+			d, err := svc.Plan(context.Background(), mywhoosh.Activity{ID: "a1", StartDatetime: "2026-01-08T14:10:00.000Z"})
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
 			}
