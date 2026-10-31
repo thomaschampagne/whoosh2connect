@@ -187,3 +187,19 @@ func TestDataHome(t *testing.T) {
 		})
 	}
 }
+
+func TestWatchSettingsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := Default()
+	cfg.Watch = Watch{Enabled: true, Dir: "/tmp/rides"}
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := Load(Overrides{ConfigPath: &path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Watch != cfg.Watch {
+		t.Errorf("watch = %+v, want %+v", got.Watch, cfg.Watch)
+	}
+}

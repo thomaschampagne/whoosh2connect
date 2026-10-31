@@ -35,11 +35,19 @@ type Device struct {
 	Serial uint32 `yaml:"serial"`
 }
 
+// Watch holds local ride-folder watching. Enabled is set by the TUI toggle.
+// An empty Dir means the platform default is used.
+type Watch struct {
+	Enabled bool   `yaml:"enabled"`
+	Dir     string `yaml:"dir"`
+}
+
 // Config is the full application configuration.
 type Config struct {
 	MyWhoosh MyWhoosh `yaml:"mywhoosh"`
 	Garmin   Garmin   `yaml:"garmin"`
 	Device   Device   `yaml:"device"`
+	Watch    Watch    `yaml:"watch"`
 }
 
 // Paths locates the on-disk files the app uses.
