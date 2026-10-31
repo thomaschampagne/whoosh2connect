@@ -48,7 +48,7 @@ tidy:
 sanity: fmt test vet build
 
 # CI: check-only, no rewrites.
-ci: fmt-check vet test build
+ci: fmt-check vet lint test build
 
 clean:
     rm -rf bin dist
@@ -91,7 +91,7 @@ scoop-manifest version hash:
         "version": "$version",
         "description": "Download MyWhoosh cycling rides and upload them to Garmin Connect.",
         "homepage": "https://github.com/thomaschampagne/whoosh2connect",
-        "license": "NOASSERTION",
+        "license": "MIT",
         "architecture": {
             "64bit": {
                 "url": "https://github.com/thomaschampagne/whoosh2connect/releases/download/$version/whoosh2connect.exe",

@@ -64,6 +64,9 @@ func TestScoopManifestRenders(t *testing.T) {
 	if m.Homepage != "https://github.com/thomaschampagne/whoosh2connect" {
 		t.Errorf("homepage = %q", m.Homepage)
 	}
+	if m.License != "MIT" {
+		t.Errorf("license = %q, want MIT", m.License)
+	}
 	if m.Bin != "whoosh2connect.exe" {
 		t.Errorf("bin = %q", m.Bin)
 	}
