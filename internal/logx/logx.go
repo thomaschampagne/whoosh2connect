@@ -14,8 +14,6 @@ import (
 
 const redacted = "[redacted]"
 
-var sensitiveKeys = []string{"password", "token", "secret", "mfa", "code", "authorization", "cookie"}
-
 // Open appends JSON log lines to path, creating the file with mode 0600 and
 // its directory with mode 0700. The returned closer must be called on exit.
 func Open(path string, level slog.Level) (*slog.Logger, io.Closer, error) {
@@ -32,7 +30,7 @@ func Open(path string, level slog.Level) (*slog.Logger, io.Closer, error) {
 
 func redact(_ []string, a slog.Attr) slog.Attr {
 	key := strings.ToLower(a.Key)
-	for _, s := range sensitiveKeys {
+	for _, s := range []string{"password", "token", "secret", "mfa", "authorization", "cookie"} {
 		if strings.Contains(key, s) {
 			return slog.String(a.Key, redacted)
 		}
