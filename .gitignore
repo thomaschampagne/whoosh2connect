@@ -2,3 +2,4 @@
 *.fit
 *.synced
 .superpowers/
+/dist/

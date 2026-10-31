@@ -1,0 +1,3 @@
+# The bucket manifest is generated as LF and byte-compared by the Go
+# manifest test; pin it LF so a core.autocrlf=true checkout is not stale.
+bucket/*.json text eol=lf
