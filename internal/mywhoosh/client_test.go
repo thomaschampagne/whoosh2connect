@@ -227,3 +227,22 @@ func TestDownloadFitEscapesFileID(t *testing.T) {
 		t.Errorf("fileId = %q, want %q", body["fileId"], fileID)
 	}
 }
+
+func TestListActivitiesStopsAtPageCap(t *testing.T) {
+	var calls int
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`{"data":{"results":[{"id":"x"}],"totalPages":1000000}}`))
+	}))
+	c.token = "abc"
+	acts, err := c.ListActivities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != maxActivityPages {
+		t.Errorf("requests = %d, want cap %d", calls, maxActivityPages)
+	}
+	if len(acts) != maxActivityPages {
+		t.Errorf("activities = %d, want %d", len(acts), maxActivityPages)
+	}
+}

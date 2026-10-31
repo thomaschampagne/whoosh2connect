@@ -158,3 +158,43 @@ func mustStabilize(t *testing.T, w *Watcher) []Ride {
 	t.Fatal("no ride after 5 scans")
 	return nil
 }
+
+func TestHashCacheRereadsOnlyChangedFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ride.fit")
+	if err := os.WriteFile(path, []byte("one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w, err := New(Options{Dir: dir, StableScans: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := w.Scan(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if w.stats.Hashed != 1 {
+		t.Fatalf("hashed = %d after 3 unchanged scans, want 1", w.stats.Hashed)
+	}
+
+	if err := os.WriteFile(path, []byte("changed content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Scan(); err != nil {
+		t.Fatal(err)
+	}
+	if w.stats.Hashed != 2 {
+		t.Fatalf("hashed = %d after change, want 2", w.stats.Hashed)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Scan(); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.hashes) != 0 {
+		t.Fatalf("cache holds %d entries for deleted file, want 0", len(w.hashes))
+	}
+}

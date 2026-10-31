@@ -35,16 +35,18 @@ type Options struct {
 
 // Watcher reports new finished rides in a directory.
 type Watcher struct {
-	opts  Options
-	seen  map[string]bool
-	prev  map[string]fileInfo
-	stats Stats
+	opts   Options
+	seen   map[string]bool
+	prev   map[string]fileInfo
+	hashes map[string]hashEntry
+	stats  Stats
 }
 
 // Stats counts rides handed to the caller.
 type Stats struct {
 	Scanned int
 	New     int
+	Hashed  int
 }
 
 type fileInfo struct {
@@ -68,7 +70,7 @@ func New(o Options) (*Watcher, error) {
 	if o.StableScans <= 0 {
 		o.StableScans = 2
 	}
-	return &Watcher{opts: o, seen: map[string]bool{}, prev: map[string]fileInfo{}}, nil
+	return &Watcher{opts: o, seen: map[string]bool{}, prev: map[string]fileInfo{}, hashes: map[string]hashEntry{}}, nil
 }
 
 // Interval returns the configured scan interval.
@@ -89,6 +91,7 @@ func (w *Watcher) Scan() ([]Ride, error) {
 		return nil, fmt.Errorf("glob %s: %w", w.opts.Glob, err)
 	}
 	w.stats.Scanned++
+	w.pruneHashes(matches)
 
 	cur := map[string]fileInfo{}
 	for _, path := range matches {
@@ -96,7 +99,7 @@ func (w *Watcher) Scan() ([]Ride, error) {
 		if err != nil {
 			continue
 		}
-		hash, err := hashFile(path)
+		hash, err := w.hashOf(path, st)
 		if err != nil {
 			continue
 		}
@@ -182,4 +185,42 @@ func DefaultDir() (string, error) {
 func isDir(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.IsDir()
+}
+
+// hashEntry caches a file's hash until its size or mtime changes, so a scan
+// reads a file again only when it actually changed.
+type hashEntry struct {
+	size  int64
+	mtime int64
+	hash  string
+}
+
+// hashOf returns the cached hash of path when size and mtime are unchanged,
+// otherwise hashes the file again.
+func (w *Watcher) hashOf(path string, st os.FileInfo) (string, error) {
+	mtime := st.ModTime().UnixNano()
+	if e, ok := w.hashes[path]; ok && e.size == st.Size() && e.mtime == mtime {
+		return e.hash, nil
+	}
+	hash, err := hashFile(path)
+	if err != nil {
+		return "", err
+	}
+	w.stats.Hashed++
+	w.hashes[path] = hashEntry{size: st.Size(), mtime: mtime, hash: hash}
+	return hash, nil
+}
+
+// pruneHashes drops cache entries for files no longer matched, keeping the
+// cache bounded by the directory contents.
+func (w *Watcher) pruneHashes(matches []string) {
+	keep := make(map[string]bool, len(matches))
+	for _, p := range matches {
+		keep[p] = true
+	}
+	for p := range w.hashes {
+		if !keep[p] {
+			delete(w.hashes, p)
+		}
+	}
 }

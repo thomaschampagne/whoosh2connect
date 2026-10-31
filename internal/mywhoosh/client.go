@@ -19,6 +19,10 @@ import (
 const (
 	defaultLoginURL       = "https://services.mywhoosh.com/http-service/api/login"
 	defaultActivitiesBase = "https://service14.mywhoosh.com/v2/"
+
+	// maxActivityPages bounds how far ListActivities walks, so a server reporting
+	// a huge page count cannot make the client loop or hold unbounded memory.
+	maxActivityPages = 50
 )
 
 // Activity is a single MyWhoosh ride.
@@ -184,7 +188,7 @@ func (c *Client) ListActivities(ctx context.Context) ([]Activity, error) {
 		return nil, fmt.Errorf("not authenticated")
 	}
 	var all []Activity
-	for page := 1; ; page++ {
+	for page := 1; page <= maxActivityPages; page++ {
 		payload := fmt.Sprintf(`{"sortDate":"DESC","page":%d}`, page)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 			c.opts.ActivitiesURL+"rider/profile/activities", strings.NewReader(payload))
