@@ -157,7 +157,7 @@ func TestUploadDuplicateFromGarmin(t *testing.T) {
 	if res.Status != StatusDuplicate {
 		t.Fatalf("status = %s (%v)", res.Status, res.Err)
 	}
-	if !svc.Store.IsUploaded("act-1") {
+	if !isUploaded(svc.Store, "act-1") {
 		t.Fatal("duplicate should be marked uploaded")
 	}
 }
@@ -179,7 +179,7 @@ func TestUploadGarminFailure(t *testing.T) {
 	if res.Status != StatusFailed {
 		t.Fatalf("status = %s", res.Status)
 	}
-	if svc.Store.IsUploaded("act-1") {
+	if isUploaded(svc.Store, "act-1") {
 		t.Fatal("failed upload must not be marked")
 	}
 }
@@ -223,7 +223,7 @@ func TestProcessLocalFitUploadsAndDedupes(t *testing.T) {
 	if g.uploads != 1 {
 		t.Fatalf("uploads = %d, want 1", g.uploads)
 	}
-	if !svc.Store.IsUploaded(id) {
+	if !isUploaded(svc.Store, id) {
 		t.Fatal("local fit not marked uploaded")
 	}
 
@@ -245,7 +245,7 @@ func TestProcessLocalFitDuplicate(t *testing.T) {
 	if res.Status != StatusDuplicate {
 		t.Fatalf("status = %s (%v)", res.Status, res.Err)
 	}
-	if !svc.Store.IsUploaded("local:dup") {
+	if !isUploaded(svc.Store, "local:dup") {
 		t.Fatal("duplicate should be marked uploaded")
 	}
 }
@@ -272,5 +272,151 @@ func TestDescribeUpload(t *testing.T) {
 		if got := c.r.DescribeUpload(); got != c.want {
 			t.Errorf("DescribeUpload(%q) = %q", c.r.Status, got)
 		}
+	}
+}
+
+func isUploaded(st *state.Store, id string) bool {
+	e, ok := st.ByID(id)
+	return ok && e.Status == state.StatusUploaded
+}
+
+func TestUploadLedgerPaths(t *testing.T) {
+	fit := fixture()
+	act := func(id string) mywhoosh.Activity {
+		return mywhoosh.Activity{ID: id, ActivityFileID: "f-" + id}
+	}
+	tests := []struct {
+		name        string
+		seed        func(*testing.T, *Service)
+		garminErr   error
+		wantStatus  string
+		wantReason  string
+		wantUploads int
+		wantLedger  state.Status
+	}{
+		{
+			name:        "fresh ride uploads once",
+			wantStatus:  StatusUploaded,
+			wantUploads: 1,
+			wantLedger:  state.StatusUploaded,
+		},
+		{
+			name: "same fit under new id is a hash hit",
+			seed: func(t *testing.T, s *Service) {
+				if r := s.Upload(context.Background(), act("first")); r.Status != StatusUploaded {
+					t.Fatalf("seed: %+v", r)
+				}
+			},
+			wantStatus:  StatusSkipped,
+			wantReason:  ReasonLedgerHash,
+			wantUploads: 0,
+			wantLedger:  state.StatusUploaded,
+		},
+		{
+			name: "already uploaded id is skipped",
+			seed: func(t *testing.T, s *Service) {
+				if err := s.Store.Put(state.Entry{ID: "a1", Status: state.StatusUploaded}); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantStatus:  StatusSkipped,
+			wantReason:  ReasonLedgerID,
+			wantUploads: 0,
+			wantLedger:  state.StatusUploaded,
+		},
+		{
+			name:        "lost response leaves failed entry for retry",
+			garminErr:   errors.New("connection reset"),
+			wantStatus:  StatusFailed,
+			wantUploads: 1,
+			wantLedger:  state.StatusFailed,
+		},
+		{
+			name:        "garmin 409 is recorded as uploaded",
+			garminErr:   garmin.ErrDuplicate,
+			wantStatus:  StatusDuplicate,
+			wantUploads: 1,
+			wantLedger:  state.StatusUploaded,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mw := &fakeMyWhoosh{fits: map[string][]byte{"f-a1": fit, "f-first": fit, "f-second": fit}}
+			g := &fakeGarmin{err: nil}
+			g.upload = func(string) error { return tt.garminErr }
+			svc := newService(t, mw, g)
+			if tt.seed != nil {
+				tt.seed(t, svc)
+				g.uploads = 0
+			}
+			id := "a1"
+			if tt.name == "same fit under new id is a hash hit" {
+				id = "second"
+			}
+			res := svc.Upload(context.Background(), act(id))
+			if res.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q (err %v)", res.Status, tt.wantStatus, res.Err)
+			}
+			if res.Reason != tt.wantReason {
+				t.Errorf("reason = %q, want %q", res.Reason, tt.wantReason)
+			}
+			if g.uploads != tt.wantUploads {
+				t.Errorf("uploads = %d, want %d", g.uploads, tt.wantUploads)
+			}
+			e, ok := svc.Store.ByID(id)
+			if !ok || e.Status != tt.wantLedger {
+				t.Errorf("ledger = %+v ok=%v, want %q", e, ok, tt.wantLedger)
+			}
+		})
+	}
+}
+
+type fakeRemote struct {
+	found bool
+	err   error
+	calls int
+}
+
+func (f *fakeRemote) FindMatch(ctx context.Context, start time.Time) (string, bool, error) {
+	f.calls++
+	return "g-9", f.found, f.err
+}
+
+func TestUploadRemoteGuard(t *testing.T) {
+	tests := []struct {
+		name        string
+		remote      *fakeRemote
+		wantStatus  string
+		wantReason  string
+		wantUploads int
+		wantLedger  state.Status
+	}{
+		{"no checker uploads", nil, StatusUploaded, "", 1, state.StatusUploaded},
+		{"no remote match uploads", &fakeRemote{}, StatusUploaded, "", 1, state.StatusUploaded},
+		{"remote match skips and records", &fakeRemote{found: true}, StatusSkipped, ReasonRemoteMatch, 0, state.StatusUploaded},
+		{"remote error never uploads", &fakeRemote{err: errors.New("http 503")}, StatusFailed, "", 0, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mw := &fakeMyWhoosh{fits: map[string][]byte{"f-a1": fixture()}}
+			g := &fakeGarmin{}
+			svc := newService(t, mw, g)
+			if tt.remote != nil {
+				svc.Remote = tt.remote
+			}
+			res := svc.Upload(context.Background(), mywhoosh.Activity{ID: "a1", ActivityFileID: "f-a1"})
+			if res.Status != tt.wantStatus || res.Reason != tt.wantReason {
+				t.Errorf("got %q/%q, want %q/%q (err %v)", res.Status, res.Reason, tt.wantStatus, tt.wantReason, res.Err)
+			}
+			if g.uploads != tt.wantUploads {
+				t.Errorf("uploads = %d, want %d", g.uploads, tt.wantUploads)
+			}
+			if tt.wantLedger != "" {
+				e, ok := svc.Store.ByID("a1")
+				if !ok || e.Status != tt.wantLedger {
+					t.Errorf("ledger = %+v ok=%v, want %q", e, ok, tt.wantLedger)
+				}
+			}
+		})
 	}
 }
