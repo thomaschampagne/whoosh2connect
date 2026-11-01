@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ func TestLoginSuccessPersistsToken(t *testing.T) {
 		t.Errorf("cached = %+v", ct)
 	}
 	info, _ := os.Stat(tokenFile)
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("perm = %o, want 600", info.Mode().Perm())
 	}
 }

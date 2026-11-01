@@ -49,19 +49,20 @@ func TestSecondUploadOfSameRideWhileInFlightIsSkipped(t *testing.T) {
 
 func TestLedgerWriteFailureAfterUploadStaysUploaded(t *testing.T) {
 	dir := t.TempDir()
-	st, err := state.Open(filepath.Join(dir, "state.json"))
+	statePath := filepath.Join(dir, "state.json")
+	st, err := state.Open(statePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mw := &fakeMyWhoosh{fits: map[string][]byte{"f-a1": fixture()}}
 	g := &fakeGarmin{}
 	g.upload = func(string) error {
-		// Block ledger writes after the POST: lock and temp files need dir write access.
-		if err := os.Chmod(dir, 0o500); err != nil {
+		// Replace the ledger with a directory after the POST so the next write
+		// fails on every OS. Chmod cannot block writes on Windows.
+		if err := os.Remove(statePath); err != nil {
 			return err
 		}
-		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-		return nil
+		return os.Mkdir(statePath, 0o700)
 	}
 	svc := New(mw, g, st, testDeviceValue(), nil)
 	res := svc.Upload(context.Background(), mywhoosh.Activity{ID: "a1", ActivityFileID: "f-a1"})
@@ -261,7 +262,7 @@ func TestSaveSpoofedWritesFileWithoutUploading(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("perm = %o, want 600", info.Mode().Perm())
 	}
 	if g.uploads != 0 {

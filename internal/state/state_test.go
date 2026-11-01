@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -19,8 +20,10 @@ func TestOpenCreatesWithMode0600(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("perm = %o, want 600", perm)
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("perm = %o, want 600", perm)
+		}
 	}
 }
 
@@ -254,7 +257,9 @@ func TestLockFileMode0600(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		t.Errorf("lock perm = %o, want no group/other access", perm)
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm&0o077 != 0 {
+			t.Errorf("lock perm = %o, want no group/other access", perm)
+		}
 	}
 }
