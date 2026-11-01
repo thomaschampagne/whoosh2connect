@@ -71,10 +71,11 @@ Written to `dist/`:
 
 - `.github/workflows/ci.yml`: on pull requests and from `release.yml`. Runs
   `just ci`: `fmt-check`, `vet`, `test -race`, `build` for the host.
-- `.github/workflows/release.yml`: on push to `main`. Jobs: `checks` (reuses
-  `ci.yml`), `release` (semantic-release), `bucket` (renders and commits the
-  Scoop manifest to `bucket/whoosh2connect.json` on `main`, only when a new
-  release was published).
+- `.github/workflows/release.yml`: on push to `main` and `dev`. Jobs: `checks`
+  (reuses `ci.yml`), `release` (semantic-release; `main` publishes stable
+  `X.Y.Z`, `dev` publishes `X.Y.Z-dev.N` prereleases on the `dev` channel),
+  `bucket` (renders and commits the Scoop manifest to
+  `bucket/whoosh2connect.json`, `main` only, when a new release was published).
 
 ### Scoop
 
